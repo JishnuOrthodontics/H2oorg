@@ -1,0 +1,1835 @@
+// --- CLOUD BACKEND CONFIGURATION ---
+const API_BASE_URL = "http://localhost:5000/api";
+let useBackend = false;
+
+// Global helper to get Auth Headers for fetch requests
+function getAuthHeaders() {
+    const token = localStorage.getItem("aura_pos_token");
+    return {
+        "Content-Type": "application/json",
+        "Authorization": token ? `Bearer ${token}` : ""
+    };
+}
+
+async function checkBackendConnection() {
+    try {
+        const res = await fetch(`${API_BASE_URL.replace('/api', '')}/health`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data.services && data.services.database === "connected") {
+                useBackend = true;
+                console.log("📡 Connected to AURA POS Cloud Backend! Running in Cloud Mode.");
+                return true;
+            }
+        }
+    } catch (e) {
+        console.warn("⚠️ Backend server not reachable. Running in Offline Mock Mode.");
+    }
+    useBackend = false;
+    return false;
+}
+
+async function syncDataFromBackend() {
+    if (!useBackend) return;
+    try {
+        // 1. Sync Perfumes
+        const prodRes = await fetch(`${API_BASE_URL}/products`);
+        if (prodRes.ok) {
+            const data = await prodRes.json();
+            PERFUMES.length = 0;
+            data.forEach(p => PERFUMES.push(p));
+        }
+
+        // 2. Sync Customers
+        const custRes = await fetch(`${API_BASE_URL}/customers`);
+        if (custRes.ok) {
+            const data = await custRes.json();
+            CUSTOMERS.length = 0;
+            data.forEach(c => CUSTOMERS.push(c));
+        }
+
+        // 3. Sync Transactions & Reports if logged in
+        const token = localStorage.getItem("aura_pos_token");
+        if (token) {
+            const txRes = await fetch(`${API_BASE_URL}/transactions/today`, { headers: getAuthHeaders() });
+            if (txRes.ok) {
+                const data = await txRes.json();
+                salesHistory.length = 0;
+                data.forEach(t => {
+                    salesHistory.push({
+                        id: t.id,
+                        invoiceNo: t.invoice_no,
+                        date: t.date,
+                        customerName: t.customer_name,
+                        employeeName: t.employee_name,
+                        subtotal: parseFloat(t.subtotal),
+                        cgst: parseFloat(t.cgst),
+                        sgst: parseFloat(t.sgst),
+                        total: parseFloat(t.total),
+                        paymentMethod: t.payment_method,
+                        referenceId: t.reference_id,
+                        items: t.items || []
+                    });
+                });
+            }
+
+            const repRes = await fetch(`${API_BASE_URL}/reports/summary`, { headers: getAuthHeaders() });
+            if (repRes.ok) {
+                const repData = await repRes.json();
+                const salesVal = document.getElementById("rep-total-sales");
+                const taxVal = document.getElementById("rep-total-tax");
+                const txVal = document.getElementById("rep-total-tx");
+                const commVal = document.getElementById("rep-commission");
+                if (salesVal) salesVal.textContent = `₹${parseFloat(repData.gross_sales).toLocaleString('en-IN')}`;
+                if (taxVal) taxVal.textContent = `₹${parseFloat(repData.total_tax).toLocaleString('en-IN')}`;
+                if (txVal) txVal.textContent = repData.tx_count;
+                if (commVal) commVal.textContent = `₹${parseFloat(repData.commission).toLocaleString('en-IN')}`;
+            }
+        }
+    } catch (e) {
+        console.error("Error syncing data from backend:", e);
+    }
+}
+
+// --- Mock Data: Perfumes & Variants ---
+const PERFUMES = [
+    {
+        id: "p1",
+        name: "Royal Oud Extreme",
+        brand: "AURA Artisan",
+        family: "Woody",
+        gender: "Unisex",
+        notes: ["Assam Oud", "Sandalwood", "Amber", "Incense"],
+        image: "assets/images/oud.png",
+        description: "A deep, rich oriental fragrance featuring premium Assam Oud blended with warm amber and smoky incense. Highly sought after in the Kerala market.",
+        variants: [
+            { id: "v1_1", size: "30ml", concentration: "Attar", price: 3499, sku: "AUR-ROD-ATT-30", barcode: "890123400011" },
+            { id: "v1_2", size: "50ml", concentration: "EDP", price: 4999, sku: "AUR-ROD-EDP-50", barcode: "890123400012" },
+            { id: "v1_3", size: "100ml", concentration: "EDP", price: 7999, sku: "AUR-ROD-EDP-100", barcode: "890123400013" }
+        ],
+        batches: [
+            { id: "b1_1", batchNo: "B-OUD-26A", mfgDate: "2026-01-10", expDate: "2031-01-10", cost: 2200, qty: 18 }
+        ]
+    },
+    {
+        id: "p2",
+        name: "Neroli & Bergamot Breeze",
+        brand: "AURA Artisan",
+        family: "Fresh",
+        gender: "Unisex",
+        notes: ["Neroli", "Bergamot", "Sea Salt", "White Musk"],
+        image: "assets/images/citrus.png",
+        description: "A crisp, invigorating fragrance inspired by coastal breezes. Opens with bright Italian bergamot and neroli, settling into a clean white musk.",
+        variants: [
+            { id: "v2_1", size: "50ml", concentration: "EDT", price: 2899, sku: "AUR-NBB-EDT-50", barcode: "890123400021" },
+            { id: "v2_2", size: "100ml", concentration: "EDP", price: 4499, sku: "AUR-NBB-EDP-100", barcode: "890123400022" }
+        ],
+        batches: [
+            { id: "b2_1", batchNo: "B-CIT-26B", mfgDate: "2026-02-15", expDate: "2029-02-15", cost: 1300, qty: 25 }
+        ]
+    },
+    {
+        id: "p3",
+        name: "Jasmine & Velvet Rose",
+        brand: "AURA Artisan",
+        family: "Floral",
+        gender: "Feminine",
+        notes: ["Damask Rose", "Mogra Jasmine", "Patchouli", "Vanilla"],
+        image: "assets/images/floral.png", // We'll fall back gracefully if missing, or use a placeholder styled div
+        description: "An opulent floral bouquet combining rich Damask rose with local Mogra jasmine, sweetened with Madagascar vanilla and patchouli.",
+        variants: [
+            { id: "v3_1", size: "50ml", concentration: "EDP", price: 3299, sku: "AUR-JVR-EDP-50", barcode: "890123400031" },
+            { id: "v3_2", size: "100ml", concentration: "EDP", price: 5299, sku: "AUR-JVR-EDP-100", barcode: "890123400032" }
+        ],
+        batches: [
+            { id: "b3_1", batchNo: "B-FLO-26A", mfgDate: "2026-03-01", expDate: "2030-03-01", cost: 1500, qty: 12 }
+        ]
+    },
+    {
+        id: "p4",
+        name: "Cardamom & Saffron Wood",
+        brand: "Ajmal Blends",
+        family: "Spicy",
+        gender: "Masculine",
+        notes: ["Kerala Cardamom", "Kashmiri Saffron", "Cedarwood", "Leather"],
+        image: "assets/images/oud.png",
+        description: "A warm, spicy composition celebrating local spices. Fresh green cardamom and precious saffron blend with robust cedarwood and soft leather.",
+        variants: [
+            { id: "v4_1", size: "50ml", concentration: "EDP", price: 3899, sku: "AJM-CSW-EDP-50", barcode: "890123400041" },
+            { id: "v4_2", size: "100ml", concentration: "EDP", price: 5999, sku: "AJM-CSW-EDP-100", barcode: "890123400042" }
+        ],
+        batches: [
+            { id: "b4_1", batchNo: "B-SPI-26C", mfgDate: "2026-04-12", expDate: "2031-04-12", cost: 1800, qty: 15 }
+        ]
+    }
+];
+
+// --- Mock Data: Customers & Profiles ---
+const CUSTOMERS = [
+    {
+        id: "c1",
+        name: "Anjali Menon",
+        phone: "+91 98765 43210",
+        email: "anjali.menon@email.com",
+        loyaltyPoints: 340,
+        scentProfile: {
+            preferred: ["Jasmine", "Rose", "Vanilla"],
+            disliked: ["Oud", "Leather"],
+            skinType: "Dry",
+            remarks: "Allergic to heavy oriental profiles. Prefers soft, sweet florals."
+        }
+    },
+    {
+        id: "c2",
+        name: "Rahul Krishnan",
+        phone: "+91 94470 11223",
+        email: "rahul.k@email.com",
+        loyaltyPoints: 890,
+        scentProfile: {
+            preferred: ["Oud", "Cardamom", "Cedarwood"],
+            disliked: ["Jasmine"],
+            skinType: "Oily",
+            remarks: "Loves strong sillage and long-lasting spicy/woody scents."
+        }
+    },
+    {
+        id: "c3",
+        name: "Dr. Jishnu Sen",
+        phone: "+91 99612 88776",
+        email: "jishnu.sen@email.com",
+        loyaltyPoints: 1200,
+        scentProfile: {
+            preferred: ["Bergamot", "Neroli", "Sandalwood"],
+            disliked: ["Vanilla"],
+            skinType: "Normal",
+            remarks: "Prefers fresh citrus for daytime/clinic, sandalwood for evenings."
+        }
+    }
+];
+
+// --- Simulated Database / State ---
+let cart = [];
+let salesHistory = [
+    {
+        id: "tx_1",
+        invoiceNo: "AURA-2026-0012",
+        date: "2026-06-29T14:35:00Z",
+        customerName: "Rahul Krishnan",
+        employeeName: "Siddharth (Cashier)",
+        subtotal: 7999,
+        cgst: 719.91,
+        sgst: 719.91,
+        total: 9438.82,
+        paymentMethod: "PhonePe UPI",
+        items: [
+            { name: "Royal Oud Extreme (100ml)", qty: 1, price: 7999 }
+        ]
+    },
+    {
+        id: "tx_2",
+        invoiceNo: "AURA-2026-0013",
+        date: "2026-06-30T10:15:00Z",
+        customerName: "Walk-in Customer",
+        employeeName: "Meera (Sales Associate)",
+        subtotal: 2899,
+        cgst: 260.91,
+        sgst: 260.91,
+        total: 3420.82,
+        paymentMethod: "Cash",
+        items: [
+            { name: "Neroli & Bergamot Breeze (50ml)", qty: 1, price: 2899 }
+        ]
+    }
+];
+
+// Active tab and selected options for interactive elements
+let scentFinderAnswers = {};
+let activeCatalogFilter = "All";
+
+document.addEventListener("DOMContentLoaded", () => {
+    // Check backend connection and sync data in the background (non-blocking)
+    checkBackendConnection().then(connected => {
+        if (connected) {
+            syncDataFromBackend().then(() => {
+                renderCatalog();
+                if (typeof renderPosCRM === "function") renderPosCRM();
+                if (typeof renderCustomerDropdown === "function") renderCustomerDropdown();
+            });
+        }
+    });
+
+    // Header background change on scroll
+    window.addEventListener("scroll", () => {
+        const header = document.querySelector("header");
+        if (window.scrollY > 50) {
+            header.classList.add("scrolled");
+        } else {
+            header.classList.remove("scrolled");
+        }
+    });
+
+    // Main View Switching (Landing Page vs POS Portal via Authentication)
+    const btnPosPortal = document.getElementById("btn-pos-portal");
+    const btnExitPos = document.getElementById("btn-exit-pos");
+    const landingView = document.getElementById("landing-view");
+    const posPortalView = document.getElementById("pos-portal-view");
+
+    if (btnPosPortal) {
+        btnPosPortal.addEventListener("click", (e) => {
+            e.preventDefault();
+            openLoginModal();
+        });
+    }
+
+    if (btnExitPos) {
+        btnExitPos.addEventListener("click", () => {
+            posPortalView.style.display = "none";
+            landingView.style.display = "block";
+            authenticatedUser = null; // Clear session on exit
+            localStorage.removeItem("aura_pos_token"); // Clear JWT
+            window.scrollTo(0, 0);
+        });
+    }
+
+    // --- Staff Authentication & Session State ---
+    const STAFF_ACCOUNTS = {
+        siddharth: { name: "Siddharth M.", role: "Cashier", pin: "1234" },
+        meera: { name: "Meera K.", role: "Sales Associate", pin: "5678" },
+        jishnu: { name: "Dr. Jishnu Sen", role: "Store Manager & Owner", pin: "9999" }
+    };
+
+    let currentEnteredPin = "";
+    let authenticatedUser = null;
+
+    window.openLoginModal = function() {
+        const modal = document.getElementById("pos-login-modal");
+        if (modal) {
+            modal.style.display = "flex";
+            clearPin();
+        }
+    };
+
+    window.closeLoginModal = function() {
+        const modal = document.getElementById("pos-login-modal");
+        if (modal) {
+            modal.style.display = "none";
+        }
+    };
+
+    window.pressPinKey = function(digit) {
+        if (currentEnteredPin.length < 4) {
+            currentEnteredPin += digit;
+            updatePinDots();
+            
+            // Auto-submit on 4th digit
+            if (currentEnteredPin.length === 4) {
+                setTimeout(authenticateStaff, 200);
+            }
+        }
+    };
+
+    window.clearPin = function() {
+        currentEnteredPin = "";
+        updatePinDots();
+        document.getElementById("login-error-message").style.display = "none";
+    };
+
+    window.backspacePin = function() {
+        if (currentEnteredPin.length > 0) {
+            currentEnteredPin = currentEnteredPin.slice(0, -1);
+            updatePinDots();
+        }
+    };
+
+    function updatePinDots() {
+        const dots = document.querySelectorAll("#pin-dots-container .pin-dot");
+        dots.forEach((dot, idx) => {
+            if (idx < currentEnteredPin.length) {
+                dot.classList.add("filled");
+            } else {
+                dot.classList.remove("filled");
+            }
+        });
+    }
+
+    async function authenticateStaff() {
+        const select = document.getElementById("login-staff-select");
+        const staffId = select.value;
+        let success = false;
+        
+        if (useBackend) {
+            try {
+                const res = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username: staffId, pin: currentEnteredPin })
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem("aura_pos_token", data.token);
+                    authenticatedUser = data.user;
+                    success = true;
+                    // Sync sales history and reports for this user
+                    await syncDataFromBackend();
+                }
+            } catch (e) {
+                console.error("Backend login failed, attempting local fallback...", e);
+            }
+        }
+        
+        // Offline Local Fallback
+        if (!success) {
+            const staff = STAFF_ACCOUNTS[staffId];
+            if (staff && currentEnteredPin === staff.pin) {
+                authenticatedUser = staff;
+                success = true;
+            }
+        }
+        
+        if (success) {
+            // Success: Unlock animation
+            const lockIcon = document.getElementById("login-lock-icon-fa");
+            if (lockIcon) {
+                lockIcon.className = "fas fa-lock-open";
+                lockIcon.style.color = "#10b981";
+            }
+            
+            setTimeout(() => {
+                // Transition to POS
+                closeLoginModal();
+                document.getElementById("landing-view").style.display = "none";
+                document.getElementById("pos-portal-view").style.display = "block";
+                
+                // Set active user session in POS
+                updatePosUserSession();
+                initPosTerminal();
+                
+                // Reset lock icon
+                if (lockIcon) {
+                    lockIcon.className = "fas fa-lock";
+                    lockIcon.style.color = "";
+                }
+            }, 500);
+        } else {
+            // Fail: Shake and error
+            const modalContent = document.querySelector(".login-modal-content");
+            if (modalContent) {
+                modalContent.classList.add("shake-animation");
+                setTimeout(() => modalContent.classList.remove("shake-animation"), 400);
+            }
+            
+            const errorMsg = document.getElementById("login-error-message");
+            if (errorMsg) {
+                errorMsg.style.display = "block";
+            }
+            
+            // Reset PIN
+            currentEnteredPin = "";
+            updatePinDots();
+        }
+    }
+
+    function updatePosUserSession() {
+        // Update cashier name in topbar
+        const topbarUserContainer = document.querySelector(".pos-topbar div[style*='text-align: right']");
+        if (topbarUserContainer) {
+            topbarUserContainer.innerHTML = `
+                <div><strong>${authenticatedUser.name}</strong> (${authenticatedUser.role})</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Kochi Branch</div>
+            `;
+        }
+
+        // Role-Based Access Control (RBAC) (REQ-05: Security Permissions)
+        const reportsTabBtn = document.querySelector(".pos-menu-item[data-tab='pos-reports']");
+        if (reportsTabBtn) {
+            if (authenticatedUser.role === "Cashier" || authenticatedUser.role === "Sales Associate") {
+                reportsTabBtn.classList.add("locked");
+            } else {
+                reportsTabBtn.classList.remove("locked");
+            }
+        }
+    }
+
+    // Close modals on clicking the blurred background outside the content box
+    document.querySelectorAll(".modal-overlay").forEach(overlay => {
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) {
+                if (overlay.id === "phonepe-payment-modal") {
+                    closePhonePeModal();
+                } else {
+                    overlay.style.display = "none";
+                }
+            }
+        });
+    });
+
+    // Check if we need to open the POS portal from a redirect
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('pos') === 'true') {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        openLoginModal();
+    }
+
+    // Initialize Landing Page Modules
+    initScentFinder();
+    renderCatalog();
+    initCatalogFilters();
+    initMistCanvas();
+});
+
+// --- LANDING PAGE: Scent Finder Logic ---
+function initScentFinder() {
+    const steps = document.querySelectorAll(".scent-finder-step");
+    const nextBtns = document.querySelectorAll(".next-step");
+    const prevBtns = document.querySelectorAll(".prev-step");
+    const optionCards = document.querySelectorAll(".option-card");
+
+    optionCards.forEach(card => {
+        card.addEventListener("click", () => {
+            const question = card.dataset.question;
+            const value = card.dataset.value;
+
+            // Remove selected class from siblings
+            card.parentElement.querySelectorAll(".option-card").forEach(c => c.classList.remove("selected"));
+            card.classList.add("selected");
+
+            scentFinderAnswers[question] = value;
+        });
+    });
+
+    nextBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            const currentStep = parseInt(btn.dataset.step);
+            
+            // Validate selection
+            const currentQuestion = steps[currentStep - 1].querySelector(".option-card")?.dataset.question;
+            if (currentQuestion && !scentFinderAnswers[currentQuestion]) {
+                alert("Please make a selection to proceed.");
+                return;
+            }
+
+            if (currentStep === 3) {
+                calculateScentMatch();
+            } else {
+                showStep(currentStep + 1);
+            }
+        });
+    });
+
+    prevBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            const currentStep = parseInt(btn.dataset.step);
+            showStep(currentStep - 1);
+        });
+    });
+
+    function showStep(stepNum) {
+        steps.forEach((step, idx) => {
+            if (idx === stepNum - 1) {
+                step.classList.add("active");
+            } else {
+                step.classList.remove("active");
+            }
+        });
+    }
+
+    function calculateScentMatch() {
+        const gender = scentFinderAnswers["gender"]; // masculine, feminine, unisex
+        const vibe = scentFinderAnswers["vibe"];     // woody, fresh, floral, spicy
+        const occasion = scentFinderAnswers["occasion"]; // daily, evening, active
+
+        // Simple matching score
+        let bestMatch = PERFUMES[0];
+        let maxScore = -1;
+
+        PERFUMES.forEach(perfume => {
+            let score = 0;
+            
+            // Gender match
+            if (perfume.gender.toLowerCase() === gender) score += 3;
+            else if (perfume.gender === "Unisex") score += 2;
+
+            // Fragrance Family match
+            if (perfume.family.toLowerCase() === vibe) score += 5;
+
+            // Occasion logic mapping
+            if (occasion === "daily" && perfume.family === "Fresh") score += 2;
+            if (occasion === "evening" && (perfume.family === "Woody" || perfume.family === "Spicy")) score += 3;
+            if (occasion === "active" && perfume.family === "Fresh") score += 3;
+
+            if (score > maxScore) {
+                maxScore = score;
+                bestMatch = perfume;
+            }
+        });
+
+        // Render Result
+        const resultStep = document.getElementById("step-result");
+        const resultContainer = resultStep.querySelector(".result-container");
+
+        resultContainer.innerHTML = `
+            <div class="result-image">
+                <img src="${bestMatch.image}" alt="${bestMatch.name}" onerror="this.src='https://images.unsplash.com/photo-1541643600914-78b084683601?w=500'">
+            </div>
+            <div class="result-info">
+                <span class="badge">Perfect Match</span>
+                <h4 class="font-serif" style="margin-top:0.5rem">${bestMatch.name}</h4>
+                <div class="brand">${bestMatch.brand} (${bestMatch.variants[0].concentration})</div>
+                <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:1rem">${bestMatch.description}</p>
+                <div class="result-notes">
+                    ${bestMatch.notes.map(note => `<span class="result-note">${note}</span>`).join("")}
+                </div>
+                <div class="result-price">₹${bestMatch.variants[0].price.toLocaleString('en-IN')}</div>
+                <div style="display:flex; gap:1rem">
+                    <button class="btn btn-gold" onclick="scrollToCatalogAndHighlight('${bestMatch.id}')">View Details</button>
+                    <button class="btn btn-outline" onclick="resetScentFinder()">Try Again</button>
+                </div>
+            </div>
+        `;
+
+        showStep(4);
+    }
+}
+
+window.resetScentFinder = function() {
+    scentFinderAnswers = {};
+    document.querySelectorAll(".option-card").forEach(c => c.classList.remove("selected"));
+    const steps = document.querySelectorAll(".scent-finder-step");
+    steps.forEach((step, idx) => {
+        if (idx === 0) step.classList.add("active");
+        else step.classList.remove("active");
+    });
+};
+
+window.scrollToCatalogAndHighlight = function(perfumeId) {
+    const catalogSection = document.getElementById("collections");
+    if (catalogSection) {
+        catalogSection.scrollIntoView({ behavior: "smooth" });
+        setTimeout(() => {
+            const card = document.querySelector(`[data-perfume-id="${perfumeId}"]`);
+            if (card) {
+                card.style.borderColor = "var(--primary-gold)";
+                card.style.boxShadow = "var(--shadow-gold-heavy)";
+                setTimeout(() => {
+                    card.style.borderColor = "";
+                    card.style.boxShadow = "";
+                }, 3000);
+            }
+        }, 800);
+    }
+};
+
+// --- LANDING PAGE: Catalog Rendering & Filtering ---
+function initCatalogFilters() {
+    const filterBtns = document.querySelectorAll(".filter-btn");
+    filterBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            filterBtns.forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            activeCatalogFilter = btn.dataset.filter;
+            renderCatalog();
+        });
+    });
+}
+
+function renderCatalog() {
+    const catalogGrid = document.querySelector(".catalog-grid");
+    if (!catalogGrid) return;
+
+    catalogGrid.innerHTML = "";
+
+    let filtered = activeCatalogFilter === "All" 
+        ? PERFUMES 
+        : PERFUMES.filter(p => p.family === activeCatalogFilter);
+
+    // Limit to 3 on the home page, show all on catalog.html
+    const isCatalogPage = window.location.pathname.includes("catalog.html");
+    if (!isCatalogPage) {
+        filtered = filtered.slice(0, 3);
+    }
+
+    filtered.forEach(perfume => {
+        // Find default variant (usually 50ml or first available)
+        const defaultVar = perfume.variants[0];
+        
+        const card = document.createElement("div");
+        card.className = "product-card";
+        card.dataset.perfumeId = perfume.id;
+        card.innerHTML = `
+            <div class="product-card-image">
+                <img src="${perfume.image}" alt="${perfume.name}" id="img-${perfume.id}" onerror="this.src='https://images.unsplash.com/photo-1541643600914-78b084683601?w=500'">
+                <span class="product-card-badge badge">${perfume.family}</span>
+            </div>
+            <div class="product-card-content">
+                <span class="product-card-brand">${perfume.brand}</span>
+                <h3 class="product-card-title">${perfume.name}</h3>
+                <p class="product-card-notes"><strong>Notes:</strong> ${perfume.notes.join(", ")}</p>
+                
+                <div class="product-card-sizes">
+                    ${perfume.variants.map((v, i) => `
+                        <button class="size-option ${i === 0 ? 'active' : ''}" 
+                                onclick="changeCatalogVariant(this, '${perfume.id}', '${v.id}', ${v.price})">
+                            ${v.size} - ${v.concentration}
+                        </button>
+                    `).join("")}
+                </div>
+
+                <div class="product-card-footer">
+                    <div class="product-card-price" id="price-${perfume.id}">₹${defaultVar.price.toLocaleString('en-IN')}</div>
+                    <button class="add-to-cart-btn" onclick="simulateLandingCartAdd('${perfume.id}', '${defaultVar.id}')" title="Simulate Adding to POS Cart">
+                        <i class="fas fa-plus">+</i>
+                    </button>
+                </div>
+            </div>
+        `;
+        catalogGrid.appendChild(card);
+    });
+}
+
+window.changeCatalogVariant = function(btn, perfumeId, variantId, price) {
+    // Update active button state
+    const parent = btn.parentElement;
+    parent.querySelectorAll(".size-option").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    // Update price label
+    const priceLabel = document.getElementById(`price-${perfumeId}`);
+    if (priceLabel) {
+        priceLabel.textContent = `₹${price.toLocaleString('en-IN')}`;
+    }
+
+    // Update the Add to Cart button's onclick action to use the newly selected variant
+    const card = document.querySelector(`[data-perfume-id="${perfumeId}"]`);
+    const cartBtn = card.querySelector(".add-to-cart-btn");
+    if (cartBtn) {
+        cartBtn.setAttribute("onclick", `simulateLandingCartAdd('${perfumeId}', '${variantId}')`);
+    }
+};
+
+window.simulateLandingCartAdd = function(perfumeId, variantId) {
+    const perfume = PERFUMES.find(p => p.id === perfumeId);
+    const variant = perfume.variants.find(v => v.id === variantId);
+
+    // Alert user and offer to go to POS
+    const goToPos = confirm(`[POS Simulation] "${perfume.name} (${variant.size})" added to the POS cart!\n\nWould you like to open the Staff POS Terminal to view the checkout process?`);
+    
+    // Add to cart state
+    addToCartState(perfume, variant);
+
+    if (goToPos) {
+        const isCatalogPage = window.location.pathname.includes("catalog.html");
+        if (isCatalogPage) {
+            window.location.href = "index.html?pos=true";
+        } else {
+            document.getElementById("landing-view").style.display = "none";
+            document.getElementById("pos-portal-view").style.display = "block";
+            initPosTerminal();
+        }
+    }
+};
+
+function addToCartState(perfume, variant) {
+    const existing = cart.find(item => item.variantId === variant.id);
+    if (existing) {
+        existing.qty += 1;
+    } else {
+        cart.push({
+            perfumeId: perfume.id,
+            variantId: variant.id,
+            name: perfume.name,
+            brand: perfume.brand,
+            size: variant.size,
+            concentration: variant.concentration,
+            price: variant.price,
+            sku: variant.sku,
+            barcode: variant.barcode,
+            gstRate: variant.gstRate,
+            qty: 1
+        });
+    }
+}
+
+// --- STAFF POS TERMINAL: Core Logic ---
+let activePosTab = "pos-billing";
+
+function initPosTerminal() {
+    setupPosNavigation();
+    renderPosProducts();
+    renderPosCart();
+    renderPosInventory();
+    renderPosCRM();
+    renderPosReports();
+    renderCustomerDropdown(); // Populate dropdown dynamically from CRM state
+}
+
+function setupPosNavigation() {
+    const menuItems = document.querySelectorAll(".pos-menu-item");
+    menuItems.forEach(item => {
+        item.addEventListener("click", (e) => {
+            e.preventDefault();
+
+            // Check if tab is locked (RBAC check)
+            if (item.classList.contains("locked")) {
+                alert(`Access Denied: ${authenticatedUser.name} is logged in as a ${authenticatedUser.role}.\n\nThis tab requires Manager or Owner privileges.`);
+                return;
+            }
+
+            const tabId = item.dataset.tab;
+            if (!tabId) return;
+
+            menuItems.forEach(i => i.classList.remove("active"));
+            item.classList.add("active");
+
+            document.querySelectorAll(".pos-tab-content").forEach(tab => {
+                tab.classList.remove("active");
+            });
+            document.getElementById(tabId).classList.add("active");
+            activePosTab = tabId;
+
+            // Refresh specific tab contents if needed
+            if (tabId === "pos-inventory") renderPosInventory();
+            if (tabId === "pos-crm") renderPosCRM();
+            if (tabId === "pos-reports") renderPosReports();
+        });
+    });
+
+    // Customer Selection listener
+    const customerSelect = document.getElementById("pos-customer-select-dropdown");
+    if (customerSelect) {
+        customerSelect.addEventListener("change", (e) => {
+            const customerId = e.target.value;
+            const profileDiv = document.getElementById("pos-selected-customer-profile");
+            
+            if (customerId === "walkin") {
+                profileDiv.style.display = "none";
+            } else {
+                const customer = CUSTOMERS.find(c => c.id === customerId);
+                if (customer) {
+                    profileDiv.style.display = "block";
+                    profileDiv.innerHTML = `
+                        <div style="font-size:0.8rem; border: 1px solid var(--border-color); border-radius: 4px; padding: 0.75rem; background: rgba(197, 168, 128, 0.05)">
+                            <div style="color:var(--primary-gold); font-weight:600; margin-bottom:0.25rem">Scent Profile: ${customer.name}</div>
+                            <div><strong>Prefers:</strong> ${customer.scentProfile.preferred.join(", ")}</div>
+                            <div><strong>Dislikes:</strong> ${customer.scentProfile.disliked.join(", ")}</div>
+                            <div style="color:var(--text-secondary); margin-top:0.25rem; font-style:italic">"${customer.scentProfile.remarks}"</div>
+                            <div style="margin-top:0.25rem; font-weight:500">Loyalty Balance: ${customer.loyaltyPoints} pts</div>
+                        </div>
+                    `;
+                }
+            }
+        });
+    }
+}
+
+// Render Products in POS Billing Grid
+function renderPosProducts() {
+    const grid = document.getElementById("pos-products-grid");
+    const searchInput = document.getElementById("pos-product-search");
+    if (!grid) return;
+
+    const render = (query = "") => {
+        grid.innerHTML = "";
+        const normalizedQuery = query.toLowerCase();
+
+        PERFUMES.forEach(perfume => {
+            perfume.variants.forEach(variant => {
+                const matchesSearch = perfume.name.toLowerCase().includes(normalizedQuery) ||
+                                      perfume.brand.toLowerCase().includes(normalizedQuery) ||
+                                      variant.sku.toLowerCase().includes(normalizedQuery) ||
+                                      variant.barcode.includes(normalizedQuery);
+
+                if (query && !matchesSearch) return;
+
+                const prodCard = document.createElement("div");
+                prodCard.className = "pos-prod-card";
+                prodCard.innerHTML = `
+                    <div class="pos-prod-image">
+                        <img src="${perfume.image}" alt="${perfume.name}" onerror="this.src='https://images.unsplash.com/photo-1541643600914-78b084683601?w=500'">
+                    </div>
+                    <div class="pos-prod-brand">${perfume.brand}</div>
+                    <div class="pos-prod-name">${perfume.name}</div>
+                    <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.5rem">${variant.size} - ${variant.concentration}</div>
+                    <div style="font-weight:700; color:var(--primary-gold)">₹${variant.price.toLocaleString('en-IN')}</div>
+                `;
+                prodCard.addEventListener("click", () => {
+                    addToCartState(perfume, variant);
+                    renderPosCart();
+                });
+                grid.appendChild(prodCard);
+            });
+        });
+    };
+
+    if (searchInput) {
+        searchInput.addEventListener("input", (e) => render(e.target.value));
+    }
+    render();
+}
+
+// Simulate Handheld Barcode Scanner
+window.simulateBarcodeScan = function() {
+    // Pick a random barcode from our variants
+    const allVariants = [];
+    PERFUMES.forEach(p => {
+        p.variants.forEach(v => {
+            allVariants.push({ perfume: p, variant: v });
+        });
+    });
+
+    const random = allVariants[Math.floor(Math.random() * allVariants.length)];
+    addToCartState(random.perfume, random.variant);
+    renderPosCart();
+
+    // Alert mimicking scanner beep
+    const toast = document.createElement("div");
+    toast.style.position = "fixed";
+    toast.style.bottom = "2rem";
+    toast.style.right = "2rem";
+    toast.style.background = "var(--accent-emerald)";
+    toast.style.color = "white";
+    toast.style.padding = "1rem 2rem";
+    toast.style.borderRadius = "4px";
+    toast.style.border = "1px solid var(--primary-gold)";
+    toast.style.zIndex = "3000";
+    toast.innerHTML = `🔊 <strong>BEEP!</strong> Barcode scanned: ${random.variant.barcode}<br><small>${random.perfume.name} (${random.variant.size}) added.</small>`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+};
+
+// Render POS Cart Column
+function renderPosCart() {
+    const list = document.getElementById("pos-cart-list");
+    const subtotalEl = document.getElementById("pos-subtotal");
+    const cgstEl = document.getElementById("pos-cgst");
+    const sgstEl = document.getElementById("pos-sgst");
+    const totalEl = document.getElementById("pos-total");
+
+    if (!list) return;
+
+    list.innerHTML = "";
+
+    if (cart.length === 0) {
+        list.innerHTML = `<div style="text-align:center; color:var(--text-muted); margin-top:4rem">
+            <i class="fas fa-shopping-cart" style="font-size:2rem; margin-bottom:1rem; display:block"></i>
+            Cart is empty.<br>Scan a barcode or click a product.
+        </div>`;
+        subtotalEl.textContent = "₹0.00";
+        cgstEl.textContent = "₹0.00";
+        sgstEl.textContent = "₹0.00";
+        totalEl.textContent = "₹0.00";
+        return;
+    }
+
+    let subtotal = 0;
+    let totalCgst = 0;
+    let totalSgst = 0;
+
+    cart.forEach(item => {
+        const itemSubtotal = item.price * item.qty;
+        subtotal += itemSubtotal;
+
+        // Dynamic local GST split (Standard 18% total: 9% CGST + 9% SGST)
+        const cgstRate = 0.09; 
+        const sgstRate = 0.09;
+        const itemCgst = itemSubtotal * cgstRate;
+        const itemSgst = itemSubtotal * sgstRate;
+
+        totalCgst += itemCgst;
+        totalSgst += itemSgst;
+
+        const cartItemDiv = document.createElement("div");
+        cartItemDiv.className = "pos-cart-item";
+        cartItemDiv.innerHTML = `
+            <div class="pos-cart-item-info">
+                <h5>${item.name}</h5>
+                <span>${item.size} | ${item.concentration} | GST 18%</span>
+            </div>
+            <div class="pos-cart-item-qty">
+                <button class="qty-btn" onclick="updatePosCartQty('${item.variantId}', -1)">-</button>
+                <span>${item.qty}</span>
+                <button class="qty-btn" onclick="updatePosCartQty('${item.variantId}', 1)">+</button>
+            </div>
+            <div class="pos-cart-item-price">₹${(itemSubtotal).toLocaleString('en-IN')}</div>
+        `;
+        list.appendChild(cartItemDiv);
+    });
+
+    const finalTotal = subtotal + totalCgst + totalSgst;
+
+    subtotalEl.textContent = `₹${subtotal.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    cgstEl.textContent = `₹${totalCgst.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    sgstEl.textContent = `₹${totalSgst.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    totalEl.textContent = `₹${finalTotal.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+}
+
+window.updatePosCartQty = function(variantId, change) {
+    const idx = cart.findIndex(item => item.variantId === variantId);
+    if (idx !== -1) {
+        cart[idx].qty += change;
+        if (cart[idx].qty <= 0) {
+            cart.splice(idx, 1);
+        }
+        renderPosCart();
+    }
+};
+
+window.clearPosCart = function() {
+    if (confirm("Are you sure you want to clear the current transaction?")) {
+        cart = [];
+        renderPosCart();
+    }
+};
+
+// --- PAYMENT INTEGRATIONS (PhonePe Dynamic UPI QR) ---
+window.processPhonePePayment = function() {
+    if (cart.length === 0) {
+        alert("Please add items to the cart before checking out.");
+        return;
+    }
+
+    const totalEl = document.getElementById("pos-total");
+    const amountStr = totalEl.textContent.replace("₹", "").replace(/,/g, "");
+    const amount = parseFloat(amountStr);
+
+    // Generate dynamic QR code parameters based on PhonePe merchant specification
+    const merchantId = "AURA_PERFUME_ONLINE";
+    const transactionId = "TXN" + Date.now();
+    
+    // Standard UPI Merchant deep link for PhonePe dynamic routing
+    const upiUrl = `upi://pay?pa=${merchantId}@ybl&pn=Aura%20Perfumes&am=${amount.toFixed(2)}&mam=${amount.toFixed(2)}&tr=${transactionId}&cu=INR&mc=5311`;
+    
+    // Render QR Code (using public API qrserver)
+    const qrImageContainer = document.getElementById("phonepe-qr-code-img");
+    qrImageContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}" alt="UPI QR Code">`;
+    
+    document.getElementById("phonepe-modal-amount").textContent = `₹${amount.toLocaleString('en-IN', {minimumFractionDigits:2})}`;
+    
+    // Show Modal
+    const modal = document.getElementById("phonepe-payment-modal");
+    modal.style.display = "flex";
+
+    // Simulate PhonePe Webhook payment confirmation loop
+    let countdown = 6;
+    const statusText = document.getElementById("phonepe-payment-status-text");
+    statusText.innerHTML = `Waiting for secure PhonePe payment verification... (Simulated success in ${countdown}s)`;
+    
+    const interval = setInterval(() => {
+        countdown--;
+        statusText.innerHTML = `Waiting for secure PhonePe payment verification... (Simulated success in ${countdown}s)`;
+        
+        if (countdown <= 0) {
+            clearInterval(interval);
+            completeTransaction("PhonePe UPI", transactionId);
+        }
+    }, 1000);
+
+    // Store interval on window so we can clear it if they close the modal early
+    window.phonePeInterval = interval;
+};
+
+window.closePhonePeModal = function() {
+    if (window.phonePeInterval) {
+        clearInterval(window.phonePeInterval);
+    }
+    document.getElementById("phonepe-payment-modal").style.display = "none";
+};
+
+window.processCashPayment = function() {
+    if (cart.length === 0) {
+        alert("Please add items to the cart before checking out.");
+        return;
+    }
+    if (confirm("Proceed with CASH payment?")) {
+        completeTransaction("Cash");
+    }
+};
+
+async function completeTransaction(method, referenceId = "") {
+    // Calculate final figures
+    let subtotal = 0;
+    cart.forEach(i => subtotal += i.price * i.qty);
+    const cgst = subtotal * 0.09;
+    const sgst = subtotal * 0.09;
+    const total = subtotal + cgst + sgst;
+
+    // Fetch customer details
+    const customerSelect = document.getElementById("pos-customer-select-dropdown");
+    const customerVal = customerSelect ? customerSelect.value : "walkin";
+    let customerName = "Walk-in Customer";
+    let phoneNum = "";
+    
+    if (customerVal !== "walkin") {
+        const customer = CUSTOMERS.find(c => c.id === customerVal);
+        if (customer) {
+            customerName = customer.name;
+            phoneNum = customer.phone;
+            // Add local loyalty points (1 point per ₹10 spent)
+            customer.loyaltyPoints += Math.floor(total / 10);
+        }
+    }
+
+    const txId = "tx_" + Date.now();
+    const invoiceNo = "AURA-" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
+
+    const transaction = {
+        id: txId,
+        invoiceNo: invoiceNo,
+        date: new Date().toISOString(),
+        customerName: customerName,
+        employeeName: authenticatedUser ? authenticatedUser.name : "Siddharth (Cashier)",
+        subtotal: subtotal,
+        cgst: cgst,
+        sgst: sgst,
+        total: total,
+        paymentMethod: method,
+        referenceId: referenceId,
+        items: cart.map(item => ({
+            name: `${item.name} (${item.size})`,
+            qty: item.qty,
+            price: item.price
+        }))
+    };
+
+    let checkoutSuccess = false;
+    if (useBackend) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/transactions`, {
+                method: "POST",
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    invoiceNo,
+                    customerId: customerVal,
+                    customerName,
+                    employeeName: authenticatedUser ? authenticatedUser.name : "Siddharth (Cashier)",
+                    subtotal,
+                    cgst,
+                    sgst,
+                    total,
+                    paymentMethod: method,
+                    referenceId,
+                    items: cart.map(item => ({
+                        variantId: item.variantId,
+                        name: `${item.name} (${item.size})`,
+                        qty: item.qty,
+                        price: item.price
+                    }))
+                })
+            });
+            if (res.ok) {
+                checkoutSuccess = true;
+                alert(`🎉 [Cloud] Transaction Completed Successfully!\n\nInvoice: ${invoiceNo}\nTotal: ₹${total.toLocaleString('en-IN')}\nPayment: ${method}`);
+            }
+        } catch (e) {
+            console.error("Backend transaction failed, falling back to local...", e);
+        }
+    }
+
+    if (!checkoutSuccess) {
+        // Offline Fallback
+        salesHistory.push(transaction);
+
+        // Deduct inventory locally
+        cart.forEach(item => {
+            const perfume = PERFUMES.find(p => p.id === item.perfumeId);
+            if (perfume && perfume.batches && perfume.batches[0]) {
+                perfume.batches[0].qty = Math.max(0, perfume.batches[0].qty - item.qty);
+            }
+        });
+        alert(`🎉 [Offline] Transaction Completed Successfully!\n\nInvoice: ${invoiceNo}\nTotal: ₹${total.toLocaleString('en-IN')}\nPayment: ${method}\n\nInventory updated locally.`);
+    }
+
+    // Close PhonePe modal if open
+    closePhonePeModal();
+
+    // WhatsApp Automation Simulation
+    if (phoneNum) {
+        const sendWA = confirm(`[WhatsApp Automation] Would you like to send a digital invoice to ${customerName} via WhatsApp (+91 ******${phoneNum.slice(-4)})?`);
+        if (sendWA) {
+            alert(`💬 [WhatsApp API] Digital receipt sent to ${phoneNum} via WhatsApp:\n\n"Hi ${customerName}, thank you for shopping at AURA. Your digital invoice ${invoiceNo} for ₹${total.toLocaleString('en-IN')} is ready. View details here: https://aura.shop/i/${txId}"`);
+        }
+    }
+
+    // Reset Cart
+    cart = [];
+    if (customerSelect) customerSelect.value = "walkin";
+    const profileDiv = document.getElementById("pos-selected-customer-profile");
+    if (profileDiv) profileDiv.style.display = "none";
+    
+    // Sync fresh data from database
+    if (useBackend) {
+        await syncDataFromBackend();
+    }
+
+    renderPosCart();
+    renderPosInventory();
+    renderPosCRM();
+    if (typeof renderPosReports === "function") renderPosReports();
+    renderPosProducts();
+}
+
+// --- TAB 2: Inventory Management ---
+function renderPosInventory() {
+    const tableBody = document.getElementById("pos-inventory-table-body");
+    if (!tableBody) return;
+
+    tableBody.innerHTML = "";
+
+    PERFUMES.forEach(perfume => {
+        perfume.variants.forEach(variant => {
+            const batch = perfume.batches[0] || { batchNo: "N/A", mfgDate: "N/A", expDate: "N/A", qty: 0 };
+            
+            // Highlight low stock or near expiry
+            const isLowStock = batch.qty < 10;
+            const stockStatus = isLowStock 
+                ? `<span style="color:#ef4444; font-weight:600">⚠️ ${batch.qty} (Low)</span>` 
+                : `<span style="color:#10b981">${batch.qty}</span>`;
+
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td><strong>${perfume.name}</strong><br><small style="color:var(--text-muted)">${perfume.brand}</small></td>
+                <td>${variant.size} (${variant.concentration})</td>
+                <td><code>${variant.sku}</code></td>
+                <td><code>${batch.batchNo}</code></td>
+                <td><small>${batch.expDate}</small></td>
+                <td>₹${variant.price.toLocaleString('en-IN')}</td>
+                <td>${stockStatus}</td>
+                <td>
+                    <button class="btn btn-outline" style="padding:0.25rem 0.5rem; font-size:0.75rem" onclick="openRestockModal('${perfume.id}', '${variant.id}')">Add Stock</button>
+                </td>
+            `;
+            tableBody.appendChild(tr);
+        });
+    });
+}
+
+// --- TAB 3: CRM / Customer Scent Profiles ---
+function renderPosCRM() {
+    const tableBody = document.getElementById("pos-crm-table-body");
+    if (!tableBody) return;
+
+    tableBody.innerHTML = "";
+
+    CUSTOMERS.forEach(customer => {
+        // Mask phone number for security compliance (REQ-06)
+        const rawPhone = customer.phone;
+        const maskedPhone = rawPhone.substring(0, 7) + " ****" + rawPhone.substring(rawPhone.length - 2);
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td><strong>${customer.name}</strong></td>
+            <td><code>${maskedPhone}</code></td>
+            <td>${customer.scentProfile.preferred.map(n => `<span class="result-note" style="font-size:0.75rem">${n}</span>`).join(" ")}</td>
+            <td><small style="color:var(--text-secondary)">${customer.scentProfile.remarks}</small></td>
+            <td><span class="badge">${customer.loyaltyPoints} pts</span></td>
+            <td>
+                <button class="btn btn-outline" style="padding:0.25rem 0.5rem; font-size:0.75rem" onclick="simulateScentFinderLink('${customer.id}')">SMS Offer</button>
+            </td>
+        `;
+        tableBody.appendChild(tr);
+    });
+}
+
+window.simulateScentFinderLink = function(customerId) {
+    const customer = CUSTOMERS.find(c => c.id === customerId);
+    if (customer) {
+        alert(`📲 [SMS Gateway] Campaign SMS dispatched to ${customer.name} (${customer.phone}):\n\n"Hi ${customer.name}, a new batch of Woody & Sandalwood fragrances has arrived! Unlock 10% off using code LOYALTY10 at AURA Kochi."`);
+    }
+};
+
+// --- TAB 4: Reports & GST & Tally Sync ---
+function renderPosReports() {
+    const totalSalesEl = document.getElementById("rep-total-sales");
+    const totalTaxEl = document.getElementById("rep-total-tax");
+    const totalTxEl = document.getElementById("rep-total-tx");
+    const commissionEl = document.getElementById("rep-commission");
+
+    if (!totalSalesEl) return;
+
+    let totalRevenue = 0;
+    let totalTax = 0;
+
+    salesHistory.forEach(tx => {
+        totalRevenue += tx.total;
+        totalTax += (tx.cgst + tx.sgst);
+    });
+
+    // 5% commission on premium fragrances for employees
+    const commissionEarned = (totalRevenue - totalTax) * 0.05;
+
+    totalSalesEl.textContent = `₹${totalRevenue.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+    totalTaxEl.textContent = `₹${totalTax.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+    totalTxEl.textContent = salesHistory.length;
+    commissionEl.textContent = `₹${commissionEarned.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+
+    // Render sales history table in Reports tab
+    const historyBody = document.getElementById("pos-reports-history-body");
+    if (historyBody) {
+        historyBody.innerHTML = "";
+        salesHistory.forEach(tx => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td><small>${new Date(tx.date).toLocaleDateString()} ${new Date(tx.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small></td>
+                <td><strong>${tx.invoiceNo}</strong></td>
+                <td>${tx.customerName}</td>
+                <td>${tx.paymentMethod}</td>
+                <td>₹${tx.total.toLocaleString('en-IN')}</td>
+            `;
+            historyBody.appendChild(tr);
+        });
+    }
+}
+
+// --- Tally ERP XML Export Engine (REQ-06 / Independent Ledger) ---
+window.exportToTally = function() {
+    let tallyXml = `<?xml version="1.0"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>Vouchers</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>\n`;
+
+    salesHistory.forEach(tx => {
+        const cleanDate = tx.date.split("T")[0].replace(/-/g, "");
+        tallyXml += `        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="Sales" ACTION="Create" OBJVIEW="AccountingVoucher">
+            <DATE>${cleanDate}</DATE>
+            <VOUCHERNUMBER>${tx.invoiceNo}</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>${tx.customerName === "Walk-in Customer" ? "Cash" : tx.customerName}</PARTYLEDGERNAME>
+            <EFFECTIVEDATE>${cleanDate}</EFFECTIVEDATE>
+            
+            <!-- Credit Sales Account -->
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Sales Account</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>${(tx.subtotal).toFixed(2)}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            
+            <!-- CGST Ledger Entry -->
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>CGST @ 9%</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>${tx.cgst.toFixed(2)}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            
+            <!-- SGST Ledger Entry -->
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>SGST @ 9%</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>${tx.sgst.toFixed(2)}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+
+            <!-- Debit Bank/Cash Account -->
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>${tx.paymentMethod === "Cash" ? "Cash-in-Hand" : "PhonePe UPI Bank A/c"}</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-${tx.total.toFixed(2)}</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>\n`;
+    });
+
+    tallyXml += `      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+
+    // Render in modal
+    const xmlContainer = document.getElementById("tally-xml-content");
+    if (xmlContainer) {
+        xmlContainer.textContent = tallyXml;
+    }
+    
+    const modal = document.getElementById("tally-export-modal");
+    modal.style.display = "flex";
+};
+
+window.closeTallyModal = function() {
+    document.getElementById("tally-export-modal").style.display = "none";
+};
+
+// --- INTERACTIVE FRAGRANCE MIST BACKGROUND ANIMATION ---
+function initMistCanvas() {
+    const canvas = document.getElementById("mist-canvas");
+    const hero = document.getElementById("hero-section");
+    if (!canvas || !hero) return;
+
+    const ctx = canvas.getContext("2d");
+    let width = (canvas.width = hero.clientWidth);
+    let height = (canvas.height = hero.clientHeight);
+
+    let particles = [];
+    const maxParticles = 120;
+
+    // Adjust canvas size on window resize
+    window.addEventListener("resize", () => {
+        width = canvas.width = hero.clientWidth;
+        height = canvas.height = hero.clientHeight;
+    });
+
+    class MistParticle {
+        constructor(x, y, isSpray = false) {
+            this.x = x;
+            this.y = y;
+            // Spray particles shoot out faster, ambient particles drift slowly
+            if (isSpray) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 2.5 + 0.5;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed - 0.3; // slight upward bias
+                this.radius = Math.random() * 8 + 4;
+                this.alpha = Math.random() * 0.4 + 0.25;
+                this.fadeSpeed = Math.random() * 0.006 + 0.006;
+            } else {
+                this.vx = (Math.random() - 0.5) * 0.4;
+                this.vy = -Math.random() * 0.3 - 0.1; // float upwards
+                this.radius = Math.random() * 25 + 15; // large ambient clouds
+                this.alpha = Math.random() * 0.12 + 0.04;
+                this.fadeSpeed = Math.random() * 0.001 + 0.0008;
+            }
+            this.wobblePhase = Math.random() * 100;
+            this.wobbleSpeed = Math.random() * 0.02 + 0.01;
+        }
+
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+
+            // Apply friction to spray
+            this.vx *= 0.95;
+            this.vy *= 0.95;
+
+            // Float upwards (buoyancy)
+            this.vy -= 0.003;
+
+            // Drifting wobble
+            this.x += Math.sin(this.wobblePhase) * 0.15;
+            this.wobblePhase += this.wobbleSpeed;
+
+            this.alpha -= this.fadeSpeed;
+        }
+
+        draw() {
+            ctx.save();
+            // Create a soft radial gradient for a realistic misty look
+            let grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
+            // Elegant warm gold color palette representing perfume mist
+            grad.addColorStop(0, `rgba(197, 168, 128, ${this.alpha})`);
+            grad.addColorStop(0.4, `rgba(197, 168, 128, ${this.alpha * 0.3})`);
+            grad.addColorStop(1, `rgba(197, 168, 128, 0)`);
+
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    // Capture mouse movement to emit spray particles
+    let lastMouseX = null;
+    let lastMouseY = null;
+
+    hero.addEventListener("mousemove", (e) => {
+        const rect = hero.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        // Only spawn if mouse is moving
+        if (lastMouseX !== null && (Math.abs(mouseX - lastMouseX) > 2 || Math.abs(mouseY - lastMouseY) > 2)) {
+            // Spawn 3 spray particles on mouse move
+            if (particles.length < maxParticles) {
+                for (let i = 0; i < 3; i++) {
+                    particles.push(new MistParticle(mouseX, mouseY, true));
+                }
+            }
+        }
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
+    });
+
+    hero.addEventListener("mouseleave", () => {
+        lastMouseX = null;
+        lastMouseY = null;
+    });
+
+    // Animation Loop
+    function loop() {
+        ctx.clearRect(0, 0, width, height);
+
+        // 1. Ambient scent wafting from the bottom
+        if (Math.random() < 0.08 && particles.length < maxParticles) {
+            // Spawn at random x positions along the bottom
+            particles.push(new MistParticle(Math.random() * width, height - 10, false));
+        }
+
+        // 2. Update and Draw particles
+        particles.forEach((p, idx) => {
+            p.update();
+            p.draw();
+
+            // Remove faded particles
+            if (p.alpha <= 0 || p.x < -50 || p.x > width + 50 || p.y < -50) {
+                particles.splice(idx, 1);
+            }
+        });
+
+        requestAnimationFrame(loop);
+    }
+
+    loop();
+}
+
+window.downloadTallyXml = function() {
+    const text = document.getElementById("tally-xml-content").textContent;
+    const blob = new Blob([text], { type: "text/xml" });
+    const anchor = document.createElement("a");
+    anchor.download = "AURA_Tally_Import.xml";
+    anchor.href = window.URL.createObjectURL(blob);
+    anchor.dataset.downloadurl = ["text/xml", anchor.download, anchor.href].join(":");
+    anchor.click();
+    window.URL.revokeObjectURL(anchor.href);
+};
+
+// --- CRM: ADD NEW CUSTOMER LOGIC ---
+window.openAddCustomerModal = function() {
+    const modal = document.getElementById("add-customer-modal");
+    if (modal) {
+        modal.style.display = "flex";
+        
+        // Reset fields
+        document.getElementById("cust-new-name").value = "";
+        document.getElementById("cust-new-phone").value = "";
+        document.getElementById("cust-new-email").value = "";
+        document.getElementById("cust-new-pref").value = "";
+        document.getElementById("cust-new-dislike").value = "";
+        document.getElementById("cust-new-remarks").value = "";
+        document.getElementById("cust-new-skintype").value = "Normal";
+    }
+};
+
+window.closeAddCustomerModal = function() {
+    const modal = document.getElementById("add-customer-modal");
+    if (modal) {
+        modal.style.display = "none";
+    }
+};
+
+window.saveNewCustomer = async function() {
+    const name = document.getElementById("cust-new-name").value.trim();
+    const phone = document.getElementById("cust-new-phone").value.trim();
+    const email = document.getElementById("cust-new-email").value.trim();
+    const prefStr = document.getElementById("cust-new-pref").value.trim();
+    const dislikeStr = document.getElementById("cust-new-dislike").value.trim();
+    const remarks = document.getElementById("cust-new-remarks").value.trim();
+    const skinType = document.getElementById("cust-new-skintype").value;
+
+    if (!name || !phone) {
+        alert("Please enter both the Name and Phone Number.");
+        return;
+    }
+
+    // Parse comma separated values
+    const preferred = prefStr ? prefStr.split(",").map(n => n.trim()).filter(n => n) : [];
+    const disliked = dislikeStr ? dislikeStr.split(",").map(n => n.trim()).filter(n => n) : [];
+
+    const newCustomer = {
+        id: "c_" + Date.now(),
+        name: name,
+        phone: phone,
+        email: email || "N/A",
+        loyaltyPoints: 0,
+        scentProfile: {
+            preferred: preferred,
+            disliked: disliked,
+            skinType: skinType,
+            remarks: remarks || "No specific sensitivities."
+        }
+    };
+
+    let savedOnCloud = false;
+    if (useBackend) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/customers`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name, phone, email,
+                    preferred, disliked,
+                    skinType, remarks
+                })
+            });
+            if (res.ok) {
+                savedOnCloud = true;
+                alert(`👤 [Cloud] New Customer "${name}" registered successfully!`);
+            }
+        } catch (e) {
+            console.error("Backend customer save failed, falling back to local...", e);
+        }
+    }
+
+    if (!savedOnCloud) {
+        CUSTOMERS.push(newCustomer);
+        alert(`👤 [Offline] New Customer "${name}" registered successfully!`);
+    }
+    
+    closeAddCustomerModal();
+    
+    // Refresh UI
+    if (useBackend) {
+        await syncDataFromBackend();
+    }
+    renderPosCRM();
+    renderCustomerDropdown();
+};
+
+function renderCustomerDropdown() {
+    const select = document.getElementById("pos-customer-select-dropdown");
+    if (!select) return;
+    
+    const currentVal = select.value;
+    
+    select.innerHTML = `<option value="walkin">Walk-in Customer (No Profile)</option>`;
+    CUSTOMERS.forEach(c => {
+        select.innerHTML += `<option value="${c.id}">${c.name} (${c.phone})</option>`;
+    });
+    
+    // Restore selection if it still exists
+    if (CUSTOMERS.some(c => c.id === currentVal)) {
+        select.value = currentVal;
+    } else {
+        select.value = "walkin";
+    }
+}
+
+// --- INVENTORY: ADD PRODUCT & RESTOCK LOGIC ---
+let activeRestockPerfumeId = null;
+let activeRestockVariantId = null;
+
+window.openAddInventoryModal = function() {
+    const modal = document.getElementById("add-inventory-modal");
+    if (modal) {
+        modal.style.display = "flex";
+        
+        // Reset fields
+        document.getElementById("inv-new-name").value = "";
+        document.getElementById("inv-new-brand").value = "";
+        document.getElementById("inv-new-size").value = "";
+        document.getElementById("inv-new-price").value = "";
+        document.getElementById("inv-new-cost").value = "";
+        document.getElementById("inv-new-batch").value = "";
+        document.getElementById("inv-new-qty").value = "";
+        document.getElementById("inv-new-expiry").value = "";
+        document.getElementById("inv-new-notes").value = "";
+        document.getElementById("inv-new-family").value = "Woody";
+        document.getElementById("inv-new-conc").value = "EDP";
+    }
+};
+
+window.closeAddInventoryModal = function() {
+    const modal = document.getElementById("add-inventory-modal");
+    if (modal) {
+        modal.style.display = "none";
+    }
+};
+
+window.saveNewInventory = async function() {
+    const name = document.getElementById("inv-new-name").value.trim();
+    const brand = document.getElementById("inv-new-brand").value.trim();
+    const size = document.getElementById("inv-new-size").value.trim();
+    const family = document.getElementById("inv-new-family").value;
+    const conc = document.getElementById("inv-new-conc").value;
+    const price = parseFloat(document.getElementById("inv-new-price").value);
+    const cost = parseFloat(document.getElementById("inv-new-cost").value);
+    const batchNo = document.getElementById("inv-new-batch").value.trim();
+    const qty = parseInt(document.getElementById("inv-new-qty").value);
+    const expiry = document.getElementById("inv-new-expiry").value;
+    const notesStr = document.getElementById("inv-new-notes").value.trim();
+
+    if (!name || !brand || !size || isNaN(price) || isNaN(cost) || !batchNo || isNaN(qty) || !expiry) {
+        alert("Please fill in all required fields (*) with valid numbers.");
+        return;
+    }
+
+    const notes = notesStr ? notesStr.split(",").map(n => n.trim()).filter(n => n) : ["Fragrance Blends"];
+
+    // Generate random barcode and SKU
+    const barcode = "890" + Math.floor(100000000 + Math.random() * 900000000);
+    const sku = (brand.substring(0, 3) + "-" + name.substring(0, 3) + "-" + conc + "-" + size.replace(/\D/g, "")).toUpperCase();
+
+    const newVariant = {
+        id: "v_" + Date.now(),
+        size: size,
+        concentration: conc,
+        price: price,
+        sku: sku,
+        barcode: barcode
+    };
+
+    let savedOnCloud = false;
+    if (useBackend) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/products`, {
+                method: "POST",
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    name, brand, family, size, concentration: conc,
+                    price, cost, batchNo, qty, expiry, notes: notesStr
+                })
+            });
+            if (res.ok) {
+                savedOnCloud = true;
+                alert(`📦 [Cloud] Product "${name} (${size})" registered and stocked successfully!`);
+            }
+        } catch (e) {
+            console.error("Backend product save failed, falling back to local...", e);
+        }
+    }
+
+    if (!savedOnCloud) {
+        // Check if the product already exists locally
+        let perfume = PERFUMES.find(p => p.name.toLowerCase() === name.toLowerCase() && p.brand.toLowerCase() === brand.toLowerCase());
+        if (perfume) {
+            perfume.variants.push(newVariant);
+            perfume.batches.unshift({
+                id: "b_" + Date.now(),
+                batchNo: batchNo,
+                mfgDate: new Date().toISOString().split("T")[0],
+                expDate: expiry,
+                cost: cost,
+                qty: qty
+            });
+        } else {
+            const newProduct = {
+                id: "p_" + Date.now(),
+                name: name,
+                brand: brand,
+                family: family,
+                gender: "Unisex",
+                notes: notes,
+                image: "assets/images/oud.png",
+                description: `${name} by ${brand}. A premium ${family} fragrance.`,
+                variants: [newVariant],
+                batches: [
+                    {
+                        id: "b_" + Date.now(),
+                        batchNo: batchNo,
+                        mfgDate: new Date().toISOString().split("T")[0],
+                        expDate: expiry,
+                        cost: cost,
+                        qty: qty
+                    }
+                ]
+            };
+            PERFUMES.push(newProduct);
+        }
+        alert(`📦 [Offline] Product "${name} (${size})" registered and stocked successfully!`);
+    }
+
+    closeAddInventoryModal();
+
+    // Refresh UI across the app
+    if (useBackend) {
+        await syncDataFromBackend();
+    }
+    renderPosInventory();
+    renderPosProducts();
+    if (typeof renderCatalog === "function") renderCatalog();
+};
+
+window.openRestockModal = function(perfumeId, variantId) {
+    const perfume = PERFUMES.find(p => p.id === perfumeId);
+    const variant = perfume.variants.find(v => v.id === variantId);
+    if (!perfume || !variant) return;
+
+    activeRestockPerfumeId = perfumeId;
+    activeRestockVariantId = variantId;
+
+    const modal = document.getElementById("restock-modal");
+    const subtitle = document.getElementById("restock-modal-subtitle");
+    
+    if (modal && subtitle) {
+        subtitle.innerHTML = `Add stock for <strong>${perfume.name} (${variant.size} - ${variant.concentration})</strong>.<br>Current stock: ${perfume.batches[0]?.qty || 0} units.`;
+        
+        // Populate default values from active batch if exists
+        const activeBatch = perfume.batches[0] || { batchNo: "", expDate: "" };
+        document.getElementById("restock-qty").value = "";
+        document.getElementById("restock-batch").value = activeBatch.batchNo;
+        document.getElementById("restock-expiry").value = activeBatch.expDate;
+        
+        modal.style.display = "flex";
+    }
+};
+
+window.closeRestockModal = function() {
+    document.getElementById("restock-modal").style.display = "none";
+    activeRestockPerfumeId = null;
+    activeRestockVariantId = null;
+};
+
+window.saveRestock = async function() {
+    const qty = parseInt(document.getElementById("restock-qty").value);
+    const batchNo = document.getElementById("restock-batch").value.trim();
+    const expiry = document.getElementById("restock-expiry").value;
+
+    if (isNaN(qty) || qty <= 0 || !batchNo || !expiry) {
+        alert("Please enter a valid quantity, batch number, and expiry date.");
+        return;
+    }
+
+    let restockedOnCloud = false;
+    if (useBackend) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/products/restock`, {
+                method: "POST",
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    perfumeId: activeRestockPerfumeId,
+                    variantId: activeRestockVariantId,
+                    qty,
+                    batchNo,
+                    expiry
+                })
+            });
+            if (res.ok) {
+                restockedOnCloud = true;
+                alert(`⚡ [Cloud] Stock updated successfully!`);
+            }
+        } catch (e) {
+            console.error("Backend restock failed, falling back to local...", e);
+        }
+    }
+
+    if (!restockedOnCloud) {
+        const perfume = PERFUMES.find(p => p.id === activeRestockPerfumeId);
+        if (perfume) {
+            const existingBatch = perfume.batches.find(b => b.batchNo === batchNo);
+            if (existingBatch) {
+                existingBatch.qty += qty;
+                existingBatch.expDate = expiry;
+            } else {
+                perfume.batches.unshift({
+                    id: "b_" + Date.now(),
+                    batchNo: batchNo,
+                    mfgDate: new Date().toISOString().split("T")[0],
+                    expDate: expiry,
+                    cost: perfume.batches[0]?.cost || 1500,
+                    qty: qty
+                });
+            }
+            alert(`⚡ [Offline] Stock updated successfully!`);
+        }
+    }
+
+    closeRestockModal();
+    
+    if (useBackend) {
+        await syncDataFromBackend();
+    }
+    renderPosInventory();
+};

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURA | Full Fragrance Collection</title>
+    <!-- Google Fonts: Playfair Display & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Header / Navigation -->
+    <header class="scrolled">
+        <div class="nav-container">
+            <a href="index.html" class="logo">AURA<span>.</span></a>
+            <nav class="nav-links">
+                <a href="index.html#collections">Home</a>
+                <a href="index.html#scent-finder">Scent Finder</a>
+                <a href="index.html#experience">Our Experience</a>
+                <!-- Redirects to index.html with pos parameter to open login modal -->
+                <a href="index.html?pos=true" class="btn btn-outline" style="padding: 0.5rem 1.2rem; font-size: 0.75rem;">Staff POS Portal</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Full Perfume Catalog Section -->
+    <section class="section" id="collections" style="margin-top: 5rem;">
+        <div class="section-header">
+            <span class="badge">Complete Catalog</span>
+            <h2>Our Full Fragrance Collection</h2>
+            <p>Explore our entire range of artisanal perfumes and attars. Use the filters below to browse by fragrance family.</p>
+        </div>
+
+        <div class="catalog-filters">
+            <button class="filter-btn active" data-filter="All">All</button>
+            <button class="filter-btn" data-filter="Woody">Oud & Woody</button>
+            <button class="filter-btn" data-filter="Fresh">Fresh & Citrus</button>
+            <button class="filter-btn" data-filter="Floral">Floral</button>
+            <button class="filter-btn" data-filter="Spicy">Spicy</button>
+        </div>
+
+        <div class="catalog-grid">
+            <!-- All products rendered dynamically by app.js -->
+        </div>
+
+        <div style="text-align: center; margin-top: 4rem;">
+            <a href="index.html" class="btn btn-outline">
+                <i class="fas fa-arrow-left" style="margin-right: 0.5rem;"></i> Back to Home
+            </a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-container">
+            <div class="footer-brand">
+                <h3 class="font-serif">AURA<span>.</span></h3>
+                <p>Elevating the retail fragrance experience in South India through curated scents and modern checkout solutions.</p>
+                <a href="index.html?pos=true" class="btn btn-gold">Open POS Portal</a>
+            </div>
+            <div class="footer-col">
+                <h4>Collections</h4>
+                <ul>
+                    <li><a href="index.html#collections">Signature Oud</a></li>
+                    <li><a href="index.html#collections">Fresh Citrus</a></li>
+                    <li><a href="index.html#collections">Intense Attars</a></li>
+                    <li><a href="index.html#collections">Gifting Sets</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Customer Care</h4>
+                <ul>
+                    <li><a href="index.html#scent-finder">Scent Consultation</a></li>
+                    <li><a href="#">Shipping & Returns</a></li>
+                    <li><a href="index.html#experience">Store Locator</a></li>
+                    <li><a href="#">Contact Support</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Legal & Security</h4>
+                <ul>
+                    <li><a href="#">Terms of Service</a></li>
+                    <li><a href="#">Privacy Policy</a></li>
+                    <li><a href="#">PhonePe Policy</a></li>
+                    <li><a href="#">GST Compliance</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 AURA Perfume Retail. All rights reserved.</p>
+            <div>
+                <a href="#">Privacy</a>
+                <a href="#">Terms</a>
+                <a href="index.html?pos=true">Staff Portal</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Script Imports -->
+    <script src="app.js"></script>
+</body>
+</html>
