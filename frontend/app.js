@@ -4,7 +4,7 @@ let useBackend = false;
 
 // Global helper to get Auth Headers for fetch requests
 function getAuthHeaders() {
-    const token = localStorage.getItem("aura_pos_token");
+    const token = localStorage.getItem("h2o_pos_token");
     return {
         "Content-Type": "application/json",
         "Authorization": token ? `Bearer ${token}` : ""
@@ -18,7 +18,7 @@ async function checkBackendConnection() {
             const data = await res.json();
             if (data.services && data.services.database === "connected") {
                 useBackend = true;
-                console.log("📡 Connected to AURA POS Cloud Backend! Running in Cloud Mode.");
+                console.log("📡 Connected to H2O POS Cloud Backend! Running in Cloud Mode.");
                 return true;
             }
         }
@@ -49,7 +49,7 @@ async function syncDataFromBackend() {
         }
 
         // 3. Sync Transactions & Reports if logged in
-        const token = localStorage.getItem("aura_pos_token");
+        const token = localStorage.getItem("h2o_pos_token");
         if (token) {
             const txRes = await fetch(`${API_BASE_URL}/transactions/today`, { headers: getAuthHeaders() });
             if (txRes.ok) {
@@ -96,7 +96,7 @@ const PERFUMES = [
     {
         id: "p1",
         name: "Royal Oud Extreme",
-        brand: "AURA Artisan",
+        brand: "H2O Artisan",
         family: "Woody",
         gender: "Unisex",
         notes: ["Assam Oud", "Sandalwood", "Amber", "Incense"],
@@ -114,7 +114,7 @@ const PERFUMES = [
     {
         id: "p2",
         name: "Neroli & Bergamot Breeze",
-        brand: "AURA Artisan",
+        brand: "H2O Artisan",
         family: "Fresh",
         gender: "Unisex",
         notes: ["Neroli", "Bergamot", "Sea Salt", "White Musk"],
@@ -131,7 +131,7 @@ const PERFUMES = [
     {
         id: "p3",
         name: "Jasmine & Velvet Rose",
-        brand: "AURA Artisan",
+        brand: "H2O Artisan",
         family: "Floral",
         gender: "Feminine",
         notes: ["Damask Rose", "Mogra Jasmine", "Patchouli", "Vanilla"],
@@ -212,7 +212,7 @@ let cart = [];
 let salesHistory = [
     {
         id: "tx_1",
-        invoiceNo: "AURA-2026-0012",
+        invoiceNo: "H2O-2026-0012",
         date: "2026-06-29T14:35:00Z",
         customerName: "Rahul Krishnan",
         employeeName: "Siddharth (Cashier)",
@@ -227,7 +227,7 @@ let salesHistory = [
     },
     {
         id: "tx_2",
-        invoiceNo: "AURA-2026-0013",
+        invoiceNo: "H2O-2026-0013",
         date: "2026-06-30T10:15:00Z",
         customerName: "Walk-in Customer",
         employeeName: "Meera (Sales Associate)",
@@ -286,7 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
             posPortalView.style.display = "none";
             landingView.style.display = "block";
             authenticatedUser = null; // Clear session on exit
-            localStorage.removeItem("aura_pos_token"); // Clear JWT
+            localStorage.removeItem("h2o_pos_token"); // Clear JWT
             window.scrollTo(0, 0);
         });
     }
@@ -367,7 +367,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 
                 if (res.ok) {
                     const data = await res.json();
-                    localStorage.setItem("aura_pos_token", data.token);
+                    localStorage.setItem("h2o_pos_token", data.token);
                     authenticatedUser = data.user;
                     success = true;
                     // Sync sales history and reports for this user
@@ -993,11 +993,11 @@ window.processPhonePePayment = function() {
     const amount = parseFloat(amountStr);
 
     // Generate dynamic QR code parameters based on PhonePe merchant specification
-    const merchantId = "AURA_PERFUME_ONLINE";
+    const merchantId = "H2O_PERFUME_ONLINE";
     const transactionId = "TXN" + Date.now();
     
     // Standard UPI Merchant deep link for PhonePe dynamic routing
-    const upiUrl = `upi://pay?pa=${merchantId}@ybl&pn=Aura%20Perfumes&am=${amount.toFixed(2)}&mam=${amount.toFixed(2)}&tr=${transactionId}&cu=INR&mc=5311`;
+    const upiUrl = `upi://pay?pa=${merchantId}@ybl&pn=H2O%20Perfumes&am=${amount.toFixed(2)}&mam=${amount.toFixed(2)}&tr=${transactionId}&cu=INR&mc=5311`;
     
     // Render QR Code (using public API qrserver)
     const qrImageContainer = document.getElementById("phonepe-qr-code-img");
@@ -1070,7 +1070,7 @@ async function completeTransaction(method, referenceId = "") {
     }
 
     const txId = "tx_" + Date.now();
-    const invoiceNo = "AURA-" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
+    const invoiceNo = "H2O-" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
 
     const transaction = {
         id: txId,
@@ -1146,7 +1146,7 @@ async function completeTransaction(method, referenceId = "") {
     if (phoneNum) {
         const sendWA = confirm(`[WhatsApp Automation] Would you like to send a digital invoice to ${customerName} via WhatsApp (+91 ******${phoneNum.slice(-4)})?`);
         if (sendWA) {
-            alert(`💬 [WhatsApp API] Digital receipt sent to ${phoneNum} via WhatsApp:\n\n"Hi ${customerName}, thank you for shopping at AURA. Your digital invoice ${invoiceNo} for ₹${total.toLocaleString('en-IN')} is ready. View details here: https://aura.shop/i/${txId}"`);
+            alert(`💬 [WhatsApp API] Digital receipt sent to ${phoneNum} via WhatsApp:\n\n"Hi ${customerName}, thank you for shopping at H2O. Your digital invoice ${invoiceNo} for ₹${total.toLocaleString('en-IN')} is ready. View details here: https://h2oorg.com/i/${txId}"`);
         }
     }
 
@@ -1233,7 +1233,7 @@ function renderPosCRM() {
 window.simulateScentFinderLink = function(customerId) {
     const customer = CUSTOMERS.find(c => c.id === customerId);
     if (customer) {
-        alert(`📲 [SMS Gateway] Campaign SMS dispatched to ${customer.name} (${customer.phone}):\n\n"Hi ${customer.name}, a new batch of Woody & Sandalwood fragrances has arrived! Unlock 10% off using code LOYALTY10 at AURA Kochi."`);
+        alert(`📲 [SMS Gateway] Campaign SMS dispatched to ${customer.name} (${customer.phone}):\n\n"Hi ${customer.name}, a new batch of Woody & Sandalwood fragrances has arrived! Unlock 10% off using code LOYALTY10 at H2O Kochi."`);
     }
 };
 
@@ -1489,7 +1489,7 @@ window.downloadTallyXml = function() {
     const text = document.getElementById("tally-xml-content").textContent;
     const blob = new Blob([text], { type: "text/xml" });
     const anchor = document.createElement("a");
-    anchor.download = "AURA_Tally_Import.xml";
+    anchor.download = "H2O_Tally_Import.xml";
     anchor.href = window.URL.createObjectURL(blob);
     anchor.dataset.downloadurl = ["text/xml", anchor.download, anchor.href].join(":");
     anchor.click();
