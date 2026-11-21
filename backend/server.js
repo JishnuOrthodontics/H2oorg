@@ -1,30 +1,35 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
+const { validateEnv, getAllowedOrigins } = require('./config/env');
 const apiRouter = require('./routes/api');
 const db = require('./config/db');
 
-dotenv.config();
+validateEnv();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const allowedOrigins = getAllowedOrigins();
 
-// Configure CORS
 app.use(cors({
-    origin: '*', // In production, restrict this to your frontend domain (e.g., https://pos.auraparfums.com)
+    origin(origin, callback) {
+        // Allow non-browser clients (curl, server-to-server) with no Origin header
+        if (!origin || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        console.warn(`CORS blocked for origin: ${origin}`);
+        return callback(null, false);
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
 
-// Mount routes
 app.use('/api', apiRouter);
 
-// Health Check Endpoint
 app.get('/health', async (req, res) => {
     try {
-        const dbCheck = await db.query('SELECT NOW()');
+        await db.query('SELECT NOW()');
         res.json({
             status: 'UP',
             timestamp: new Date(),
@@ -46,13 +51,11 @@ app.get('/health', async (req, res) => {
     }
 });
 
-// Root Endpoint
 app.get('/', (req, res) => {
-    res.send('🌌 AURA Perfumery POS Cloud Backend API is running.');
+    res.send('H2O Perfume Retail POS Cloud Backend API is running.');
 });
 
-// Start Server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📡 API Health Check available at http://localhost:${PORT}/health`);
+    console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
 });

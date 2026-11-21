@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "db:seed": "node config/seed.js"
+    "db:seed": "node config/seed.js",
+    "db:migrate-pii": "node scripts/migrate-encrypt-pii.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -1,4 +1,8 @@
 const { pool } = require('./db');
+const { validateEnv } = require('./env');
+const { encrypt } = require('./crypto');
+
+validateEnv();
 
 const schema = `
 -- Drop existing tables if they exist
@@ -19,12 +23,12 @@ CREATE TABLE users (
     role VARCHAR(50) NOT NULL DEFAULT 'Cashier'
 );
 
--- 2. Customers Table
+-- 2. Customers Table (phone/email stored encrypted — TEXT holds ciphertext)
 CREATE TABLE customers (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    phone VARCHAR(20) NOT NULL,
-    email VARCHAR(100),
+    phone TEXT NOT NULL,
+    email TEXT,
     loyalty_points INT DEFAULT 0,
     skin_type VARCHAR(50) DEFAULT 'Normal',
     preferred_notes TEXT[],
@@ -108,13 +112,31 @@ const seedData = async () => {
       ('jishnu', '9999', 'Dr. Jishnu Sen', 'Manager');
     `);
 
-    console.log("⏳ Seeding customers...");
-    await client.query(`
-      INSERT INTO customers (id, name, phone, email, loyalty_points, skin_type, preferred_notes, disliked_notes, remarks) VALUES
-      ('c1', 'Anjali Menon', '+91 98765 43210', 'anjali@example.com', 340, 'Dry', ARRAY['Jasmine', 'Rose', 'Vanilla'], ARRAY['Oud'], 'Allergic to heavy oriental profiles. Prefers soft, sweet florals.'),
-      ('c2', 'Rahul Krishnan', '+91 94470 11223', 'rahul@example.com', 890, 'Oily', ARRAY['Oud', 'Cardamom', 'Cedarwood'], ARRAY['Jasmine'], 'Loves strong sillage and long-lasting spicy/woody scents.'),
-      ('c3', 'Dr. Jishnu Sen', '+91 99612 88776', 'jishnu@example.com', 1200, 'Normal', ARRAY['Bergamot', 'Neroli', 'Sandalwood'], ARRAY['Rose'], 'Prefers fresh citrus for daytime/clinic, sandalwood for evenings.');
-    `);
+    console.log("⏳ Seeding customers (PII encrypted at rest)...");
+    const seedCustomers = [
+      {
+        id: 'c1', name: 'Anjali Menon', phone: '+91 98765 43210', email: 'anjali@example.com',
+        points: 340, skin: 'Dry', preferred: ['Jasmine', 'Rose', 'Vanilla'], disliked: ['Oud'],
+        remarks: 'Allergic to heavy oriental profiles. Prefers soft, sweet florals.'
+      },
+      {
+        id: 'c2', name: 'Rahul Krishnan', phone: '+91 94470 11223', email: 'rahul@example.com',
+        points: 890, skin: 'Oily', preferred: ['Oud', 'Cardamom', 'Cedarwood'], disliked: ['Jasmine'],
+        remarks: 'Loves strong sillage and long-lasting spicy/woody scents.'
+      },
+      {
+        id: 'c3', name: 'Dr. Jishnu Sen', phone: '+91 99612 88776', email: 'jishnu@example.com',
+        points: 1200, skin: 'Normal', preferred: ['Bergamot', 'Neroli', 'Sandalwood'], disliked: ['Rose'],
+        remarks: 'Prefers fresh citrus for daytime/clinic, sandalwood for evenings.'
+      }
+    ];
+    for (const c of seedCustomers) {
+      await client.query(
+        `INSERT INTO customers (id, name, phone, email, loyalty_points, skin_type, preferred_notes, disliked_notes, remarks)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [c.id, c.name, encrypt(c.phone), encrypt(c.email), c.points, c.skin, c.preferred, c.disliked, c.remarks]
+      );
+    }
 
     console.log("⏳ Seeding perfumes...");
     // 1. Royal Oud Extreme

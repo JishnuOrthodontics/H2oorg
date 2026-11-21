@@ -1,8 +1,10 @@
 # Dependencies
 node_modules/
 
-# Environment variables
+# Environment variables / local secrets
 .env
+.env.local
+backend/.env
 
 # OS files
 .DS_Store

@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../config/db');
+const { encrypt, decrypt } = require('../config/crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'aura_perfumes_super_secret_jwt_key';
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // --- AUTH MIDDLEWARE ---
 function authenticateToken(req, res, next) {
@@ -194,19 +195,29 @@ router.post('/products/restock', authenticateToken, async (req, res) => {
 router.get('/customers', async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM customers ORDER BY name ASC');
-        const formatted = result.rows.map(r => ({
-            id: r.id,
-            name: r.name,
-            phone: r.phone,
-            email: r.email || 'N/A',
-            loyaltyPoints: r.loyalty_points,
-            scentProfile: {
-                preferred: r.preferred_notes || [],
-                disliked: r.disliked_notes || [],
-                skinType: r.skin_type,
-                remarks: r.remarks || 'No specific sensitivities.'
+        const formatted = result.rows.map(r => {
+            let phone = r.phone;
+            let email = r.email;
+            try {
+                phone = decrypt(r.phone);
+                email = r.email ? decrypt(r.email) : null;
+            } catch (decErr) {
+                console.error(`Failed to decrypt PII for customer ${r.id}:`, decErr.message);
             }
-        }));
+            return {
+                id: r.id,
+                name: r.name,
+                phone,
+                email: email || 'N/A',
+                loyaltyPoints: r.loyalty_points,
+                scentProfile: {
+                    preferred: r.preferred_notes || [],
+                    disliked: r.disliked_notes || [],
+                    skinType: r.skin_type,
+                    remarks: r.remarks || 'No specific sensitivities.'
+                }
+            };
+        });
         res.json(formatted);
     } catch (err) {
         console.error(err);
@@ -227,7 +238,16 @@ router.post('/customers', async (req, res) => {
         await db.query(
             `INSERT INTO customers (id, name, phone, email, loyalty_points, skin_type, preferred_notes, disliked_notes, remarks) 
              VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8)`,
-            [id, name, phone, email, skinType || 'Normal', preferred || [], disliked || [], remarks || '']
+            [
+                id,
+                name,
+                encrypt(phone),
+                email ? encrypt(email) : null,
+                skinType || 'Normal',
+                preferred || [],
+                disliked || [],
+                remarks || ''
+            ]
         );
         res.status(201).json({ message: 'Customer registered successfully', id });
     } catch (err) {

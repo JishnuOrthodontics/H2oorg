@@ -2,7 +2,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
+const ROOT = path.resolve(__dirname);
 
 const MIME_TYPES = {
     '.html': 'text/html',
@@ -17,19 +18,40 @@ const MIME_TYPES = {
     '.webp': 'image/webp'
 };
 
-const server = http.createServer((req, res) => {
-    // Clean up the URL to get the file path
-    let urlPath = req.url;
+function safeFilePath(requestUrl) {
+    let urlPath = requestUrl || '/';
     const qIndex = urlPath.indexOf('?');
-    if (qIndex !== -1) {
-        urlPath = urlPath.substring(0, qIndex);
-    }
+    if (qIndex !== -1) urlPath = urlPath.substring(0, qIndex);
     const hIndex = urlPath.indexOf('#');
-    if (hIndex !== -1) {
-        urlPath = urlPath.substring(0, hIndex);
+    if (hIndex !== -1) urlPath = urlPath.substring(0, hIndex);
+
+    try {
+        urlPath = decodeURIComponent(urlPath);
+    } catch {
+        return null;
     }
 
-    let filePath = path.join(__dirname, urlPath === '/' ? 'index.html' : urlPath);
+    if (urlPath.includes('\0')) return null;
+
+    const relative = urlPath === '/' ? 'index.html' : urlPath.replace(/^[/\\]+/, '');
+    const resolved = path.resolve(ROOT, relative);
+
+    // Prevent path traversal (../../etc/passwd)
+    const rootWithSep = ROOT.endsWith(path.sep) ? ROOT : ROOT + path.sep;
+    if (resolved !== ROOT && !resolved.startsWith(rootWithSep)) {
+        return null;
+    }
+    return resolved;
+}
+
+const server = http.createServer((req, res) => {
+    const filePath = safeFilePath(req.url);
+    if (!filePath) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('Forbidden');
+        return;
+    }
+
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
@@ -49,6 +71,6 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.listen(PORT, () => {
-    console.log(`🚀 AURA Frontend server running at http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 H2O Frontend server running at http://localhost:${PORT}`);
 });

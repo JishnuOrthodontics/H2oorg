@@ -1,0 +1,14 @@
+# Optional: keep if you later move off Render.
+# Primary free API host is Render (see render.yaml) — auto-deploys from GitHub.
+# This workflow is disabled by default (workflow_dispatch only).
+
+name: Deploy backend (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "API deploys via Render Blueprint / GitHub integration (render.yaml)."

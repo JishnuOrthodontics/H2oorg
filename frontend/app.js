@@ -1,5 +1,8 @@
 // --- CLOUD BACKEND CONFIGURATION ---
-const API_BASE_URL = "http://localhost:5000/api";
+// Production URL comes from frontend/config.js (Cloudflare → GCP Cloud Run).
+const API_BASE_URL = (typeof window !== 'undefined' && window.H2O_API_BASE_URL)
+    ? window.H2O_API_BASE_URL
+    : 'http://localhost:5000/api';
 let useBackend = false;
 
 // Global helper to get Auth Headers for fetch requests

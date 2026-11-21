@@ -1,0 +1,27 @@
+# Render Blueprint — Cloudflare frontend + Supabase DB + this Express API
+# Dashboard: New → Blueprint → connect JishnuOrthodontics/H2oorg
+# Then set secret env vars in the service (not stored in this file).
+
+services:
+  - type: web
+    name: h2o-pos-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    region: singapore
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: FRONTEND_ORIGIN
+        value: https://h2oorg.com,https://www.h2oorg.com
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: PII_ENCRYPTION_KEY
+        sync: false
