@@ -7,6 +7,7 @@ Point-of-sale for H2O perfume retail: checkout, inventory, customers, and basic 
 | Frontend | [Cloudflare](https://www.h2oorg.com) (publishes `frontend/` at domain root) |
 | API | [Render](https://h2o-pos-api.onrender.com) free web service (`h2o-pos-api`) |
 | Database | [Supabase](https://supabase.com) Postgres (`h2o-pos`) |
+| Payments | [Razorpay](https://razorpay.com) Checkout (card + UPI) |
 
 Repo: [JishnuOrthodontics/H2oorg](https://github.com/JishnuOrthodontics/H2oorg)
 
@@ -17,12 +18,13 @@ Repo: [JishnuOrthodontics/H2oorg](https://github.com/JishnuOrthodontics/H2oorg)
 - **DB:** PostgreSQL via `pg` (Supabase; use the Session pooler URI for IPv4)
 - **Auth:** JWT (`JWT_SECRET`)
 - **PII:** customer phone/email encrypted at rest (AES-256-GCM, `PII_ENCRYPTION_KEY`)
+- **Payments:** Razorpay Orders + Checkout.js + webhook (`payment.captured`)
 
 ## Repo layout
 
 ```
 frontend/          POS UI + local static server
-backend/           Express API, seed, PII helpers
+backend/           Express API, seed, payments, PII helpers
 render.yaml        Render Blueprint for h2o-pos-api
 H2O_Implementation_Roadmap.md
 ```
@@ -33,14 +35,16 @@ H2O_Implementation_Roadmap.md
 
 ```bash
 cd backend
-cp ../.env.example .env
-# Fill DATABASE_URL (Supabase pooler), JWT_SECRET, PII_ENCRYPTION_KEY, FRONTEND_ORIGIN
+cp .env.example .env
+# Fill DATABASE_URL, JWT_SECRET, PII_ENCRYPTION_KEY, FRONTEND_ORIGIN
+# Optional for digital pay: RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET
 npm install
-npm run db:seed
+npm run db:migrate-payments   # idempotent; also runs on server start
+# npm run db:seed             # only for empty DBs (drops tables)
 npm run dev
 ```
 
-API: `http://localhost:5000` · health: `GET /health`
+API: `http://localhost:5000` · health: `GET /health` (includes `razorpay: configured|not_configured`)
 
 ### 2. Frontend
 
@@ -51,9 +55,11 @@ node server.js
 
 Open `http://localhost:8080`. On localhost, `config.js` points at `http://localhost:5000/api`.
 
+**Checkout:** Cash Pay (full total) or **Pay (Card / UPI)** via Razorpay. Optional split: enter cash amount → remainder charged on Razorpay. Barcode scanners: focus search, scan, Enter.
+
 ## Environment
 
-See `.env.example`. Required:
+See `.env.example` / `backend/.env.example`.
 
 | Variable | Purpose |
 | --- | --- |
@@ -61,17 +67,26 @@ See `.env.example`. Required:
 | `JWT_SECRET` | ≥32 char secret for tokens |
 | `PII_ENCRYPTION_KEY` | ≥32 char secret for phone/email encryption |
 | `FRONTEND_ORIGIN` | Comma-separated allowed CORS origins |
+| `RAZORPAY_KEY_ID` | Razorpay Key Id (`rzp_test_…` or live) |
+| `RAZORPAY_KEY_SECRET` | Razorpay Key Secret |
+| `RAZORPAY_WEBHOOK_SECRET` | Webhook signing secret |
 | `PORT` | API port (default `5000`) |
 
-Never commit `.env`. Production secrets live in the Render dashboard (Blueprint marks them `sync: false`).
+Never commit `.env`. Production secrets live in the Render dashboard.
+
+### Razorpay on Render
+
+1. Add the three `RAZORPAY_*` env vars on service `h2o-pos-api` (Blueprint lists them as secrets).
+2. Razorpay Dashboard → Webhooks → URL:  
+   `https://h2o-pos-api.onrender.com/api/webhooks/razorpay`  
+   Events: `payment.captured`, `payment.failed`.
+3. Client verify (`POST /api/payments/verify`) is the primary UX path; webhook reconciles if the browser closes mid-flow. Free-tier cold starts can delay webhooks — wake the service before a live sale if needed.
 
 ## Production
 
 - **Site:** https://www.h2oorg.com  
 - **API:** https://h2o-pos-api.onrender.com/api  
 - **Health:** https://h2o-pos-api.onrender.com/health  
-
-`frontend/config.js` uses localhost for local hostnames and Render for everything else. Cloudflare serves `frontend/` from the repo root of that folder.
 
 Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the `h2o-pos` Blueprint.
 
@@ -81,9 +96,10 @@ Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the `
 | --- | --- |
 | `npm start` | Production server |
 | `npm run dev` | Nodemon |
-| `npm run db:seed` | Schema + seed data |
+| `npm run db:seed` | Schema + seed data (destructive) |
 | `npm run db:migrate-pii` | Encrypt existing plaintext customer PII |
+| `npm run db:migrate-payments` | Add payment columns / `payment_orders` / `payment_splits` |
 
 ## Roadmap
 
-Phased work (payments, staff controls, CRM, integrations) is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0** (production-safe deploy) is complete.
+Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0** complete. **Phase 1** (Razorpay) code is in; flip Test keys + one real payment to close exit criteria.

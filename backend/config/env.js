@@ -25,6 +25,11 @@ function validateEnv() {
         console.error('❌ JWT_SECRET must be at least 32 characters.');
         process.exit(1);
     }
+
+    const rzReady = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET;
+    if (!rzReady) {
+        console.warn('⚠️  RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not set — Card/UPI checkout will return 503 until configured.');
+    }
 }
 
 function getAllowedOrigins() {

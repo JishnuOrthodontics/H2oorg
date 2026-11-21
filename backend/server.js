@@ -2,7 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const { validateEnv, getAllowedOrigins } = require('./config/env');
 const apiRouter = require('./routes/api');
+const paymentsRouter = require('./routes/payments');
+const webhooksRouter = require('./routes/webhooks');
 const db = require('./config/db');
+const { migratePayments } = require('./scripts/migrate-payments');
+const { isConfigured } = require('./config/razorpay');
 
 validateEnv();
 
@@ -12,7 +16,6 @@ const allowedOrigins = getAllowedOrigins();
 
 app.use(cors({
     origin(origin, callback) {
-        // Allow non-browser clients (curl, server-to-server) with no Origin header
         if (!origin || allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
@@ -23,9 +26,13 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// Razorpay webhooks need the raw body for HMAC verification
+app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhooksRouter);
+
 app.use(express.json());
 
 app.use('/api', apiRouter);
+app.use('/api/payments', paymentsRouter);
 
 app.get('/health', async (req, res) => {
     try {
@@ -35,7 +42,8 @@ app.get('/health', async (req, res) => {
             timestamp: new Date(),
             services: {
                 api: 'healthy',
-                database: 'connected'
+                database: 'connected',
+                razorpay: isConfigured() ? 'configured' : 'not_configured'
             }
         });
     } catch (err) {
@@ -55,7 +63,12 @@ app.get('/', (req, res) => {
     res.send('H2O Perfume Retail POS Cloud Backend API is running.');
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
-});
+migratePayments()
+    .catch((err) => console.error('Payment migration on boot failed:', err.message))
+    .finally(() => {
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 Server running on port ${PORT}`);
+            console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
+            console.log(`💳 Razorpay: ${isConfigured() ? 'configured' : 'not configured (set RAZORPAY_* env)'}`);
+        });
+    });

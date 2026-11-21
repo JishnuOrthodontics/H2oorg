@@ -397,13 +397,21 @@
                                     </div>
                                 </div>
 
-                                <!-- Payment Actions -->
+                                <!-- Split tender + Payment Actions -->
+                                <div class="pos-split-tender" style="margin-bottom: 0.75rem; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 6px;">
+                                    <label style="font-size: 0.7rem; color: var(--text-secondary); font-weight: 600; display: block; margin-bottom: 0.35rem;">SPLIT TENDER (optional)</label>
+                                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                        <input type="number" min="0" step="0.01" id="pos-cash-amount" class="pos-input" placeholder="Cash ₹" style="padding: 0.45rem; font-size: 0.8rem; flex: 1;" oninput="updateSplitRemainder()">
+                                        <span style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap;">Card/UPI: <strong id="pos-digital-remainder">₹0.00</strong></span>
+                                    </div>
+                                    <small style="display:block; margin-top:0.35rem; font-size:0.65rem; color:var(--text-muted);">Leave cash blank for full Razorpay. Cash Pay ignores this and takes the full total.</small>
+                                </div>
                                 <div class="pos-payment-actions">
                                     <button class="btn btn-outline" style="font-size:0.8rem;" onclick="processCashPayment()">
                                         <i class="fas fa-money-bill-wave" style="margin-right: 0.5rem;"></i> Cash Pay
                                     </button>
-                                    <button class="btn btn-gold" style="font-size:0.8rem;" onclick="processPhonePePayment()">
-                                        <i class="fas fa-qrcode" style="margin-right: 0.5rem;"></i> PhonePe UPI
+                                    <button class="btn btn-gold" style="font-size:0.8rem;" onclick="processRazorpayPayment()">
+                                        <i class="fas fa-credit-card" style="margin-right: 0.5rem;"></i> Pay (Card / UPI)
                                     </button>
                                 </div>
                             </div>
@@ -536,30 +544,6 @@
     <!-- ========================================== -->
     <!--                 3. MODALS                  -->
     <!-- ========================================== -->
-
-    <!-- PhonePe Dynamic UPI QR Modal -->
-    <div class="modal-overlay" id="phonepe-payment-modal">
-        <div class="modal-content" style="text-align: center;">
-            <button class="modal-close" onclick="closePhonePeModal()">&times;</button>
-            <h3 class="font-serif" style="font-size: 1.8rem; color: var(--primary-gold);">PhonePe UPI Payment</h3>
-            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0.5rem;">Scan the dynamic QR code using GPay, PhonePe, Paytm, or any BHIM UPI app.</p>
-            
-            <div class="qr-container">
-                <div class="qr-code" id="phonepe-qr-code-img">
-                    <!-- QR Code generated dynamically by JS -->
-                </div>
-                <div style="font-size: 1.6rem; font-weight: 700; color: var(--text-primary);" id="phonepe-modal-amount">₹0.00</div>
-            </div>
-
-            <div style="font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 0.5rem;" id="phonepe-payment-status-text">
-                <i class="fas fa-spinner fa-spin" style="color: var(--primary-gold);"></i> Waiting for secure PhonePe payment verification...
-            </div>
-            
-            <div style="margin-top: 2rem; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 1rem; font-size: 0.75rem; color: var(--text-muted);">
-                Transaction ID: <span id="phonepe-txn-id">PHPE-DYN-3303-26</span> | Secure 256-bit SSL
-            </div>
-        </div>
-    </div>
 
     <!-- Tally XML Export Modal -->
     <div class="modal-overlay" id="tally-export-modal">
@@ -827,6 +811,7 @@
     </div>
 
     <!-- Script Imports: edit config.js for production API URL -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <script src="config.js"></script>
     <script src="app.js"></script>
 </body>

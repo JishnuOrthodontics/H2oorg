@@ -6,6 +6,8 @@ validateEnv();
 
 const schema = `
 -- Drop existing tables if they exist
+DROP TABLE IF EXISTS payment_splits CASCADE;
+DROP TABLE IF EXISTS payment_orders CASCADE;
 DROP TABLE IF EXISTS transaction_items CASCADE;
 DROP TABLE IF EXISTS transactions CASCADE;
 DROP TABLE IF EXISTS batches CASCADE;
@@ -84,7 +86,11 @@ CREATE TABLE transactions (
     sgst NUMERIC(10, 2) NOT NULL,
     total NUMERIC(10, 2) NOT NULL,
     payment_method VARCHAR(50) NOT NULL,
-    reference_id VARCHAR(100)
+    reference_id VARCHAR(100),
+    payment_status VARCHAR(20) NOT NULL DEFAULT 'paid',
+    razorpay_order_id VARCHAR(100),
+    razorpay_payment_id VARCHAR(100),
+    customer_id VARCHAR(50)
 );
 
 -- 7. Transaction Items Table
@@ -95,6 +101,27 @@ CREATE TABLE transaction_items (
     name VARCHAR(150) NOT NULL,
     qty INT NOT NULL,
     price NUMERIC(10, 2) NOT NULL
+);
+
+-- 8. Pending Razorpay orders (cart payload for verify/webhook finalize)
+CREATE TABLE payment_orders (
+    id VARCHAR(50) PRIMARY KEY,
+    razorpay_order_id VARCHAR(100) UNIQUE NOT NULL,
+    amount NUMERIC(10, 2) NOT NULL,
+    currency VARCHAR(10) NOT NULL DEFAULT 'INR',
+    status VARCHAR(20) NOT NULL DEFAULT 'created',
+    payload JSONB NOT NULL,
+    transaction_id VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Tender splits (cash + Razorpay)
+CREATE TABLE payment_splits (
+    id SERIAL PRIMARY KEY,
+    transaction_id VARCHAR(50) REFERENCES transactions(id) ON DELETE CASCADE,
+    method VARCHAR(50) NOT NULL,
+    amount NUMERIC(10, 2) NOT NULL,
+    reference_id VARCHAR(100)
 );
 `;
 

@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const { encrypt, decrypt } = require('../config/crypto');
+const { finalizeSale } = require('../services/sales');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -256,68 +257,52 @@ router.post('/customers', async (req, res) => {
     }
 });
 
-// --- POS: PROCESS TRANSACTIONS (CHECKOUT) ---
+// --- POS: PROCESS TRANSACTIONS (CASH / NON-GATEWAY) ---
 router.post('/transactions', authenticateToken, async (req, res) => {
-    const { invoiceNo, customerId, customerName, employeeName, subtotal, cgst, sgst, total, paymentMethod, referenceId, items } = req.body;
+    const {
+        invoiceNo, customerId, customerName, employeeName, subtotal, cgst, sgst, total,
+        paymentMethod, referenceId, items, splits
+    } = req.body;
 
     if (!invoiceNo || !customerName || !items || items.length === 0) {
         return res.status(400).json({ error: 'Missing transaction details' });
     }
 
+    const method = String(paymentMethod || '');
+    if (/phonepe/i.test(method)) {
+        return res.status(400).json({
+            error: 'PhonePe mock checkout is retired. Use Cash or Razorpay (Card/UPI).'
+        });
+    }
+    if (!/^cash$/i.test(method)) {
+        return res.status(400).json({
+            error: 'Use POST /payments/create-order for Razorpay digital payments'
+        });
+    }
+
     try {
-        await db.query('BEGIN');
+        const saleSplits = Array.isArray(splits) && splits.length
+            ? splits
+            : [{ method: 'cash', amount: total, referenceId: referenceId || '' }];
 
-        const transactionId = 'tx_' + Date.now();
+        const { transactionId } = await finalizeSale({
+            invoiceNo,
+            customerId,
+            customerName,
+            employeeName,
+            subtotal,
+            cgst,
+            sgst,
+            total,
+            paymentMethod: method || 'Cash',
+            referenceId: referenceId || '',
+            paymentStatus: 'paid',
+            splits: saleSplits,
+            items
+        });
 
-        // 1. Insert Transaction record
-        await db.query(
-            `INSERT INTO transactions (id, invoice_no, customer_name, employee_name, subtotal, cgst, sgst, total, payment_method, reference_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [transactionId, invoiceNo, customerName, employeeName, subtotal, cgst, sgst, total, paymentMethod, referenceId || '']
-        );
-
-        // 2. Loop through items to deduct inventory and log items
-        for (const item of items) {
-            // Deduct stock using FIFO (First-Expired, First-Out)
-            let qtyRemainingToDeduct = item.qty;
-            
-            // Fetch active batches for this variant with stock
-            const batchesResult = await db.query(
-                'SELECT id, qty_current FROM batches WHERE variant_id = $1 AND qty_current > 0 ORDER BY exp_date ASC',
-                [item.variantId]
-            );
-
-            for (const batch of batchesResult.rows) {
-                if (qtyRemainingToDeduct <= 0) break;
-                
-                const deduct = Math.min(qtyRemainingToDeduct, batch.qty_current);
-                await db.query(
-                    'UPDATE batches SET qty_current = qty_current - $1 WHERE id = $2',
-                    [deduct, batch.id]
-                );
-                qtyRemainingToDeduct -= deduct;
-            }
-
-            // Insert transaction item
-            await db.query(
-                'INSERT INTO transaction_items (transaction_id, variant_id, name, qty, price) VALUES ($1, $2, $3, $4, $5)',
-                [transactionId, item.variantId, item.name, item.qty, item.price]
-            );
-        }
-
-        // 3. Update customer loyalty points if customerId is provided
-        if (customerId && customerId !== 'walkin') {
-            const loyaltyEarned = Math.floor(total / 10);
-            await db.query(
-                'UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE id = $2',
-                [loyaltyEarned, customerId]
-            );
-        }
-
-        await db.query('COMMIT');
         res.status(201).json({ message: 'Transaction processed successfully', transactionId });
     } catch (err) {
-        await db.query('ROLLBACK');
         console.error(err);
         res.status(500).json({ error: 'Transaction failed' });
     }
@@ -352,7 +337,7 @@ router.get('/reports/summary', authenticateToken, async (req, res) => {
                 coalesce(COUNT(*), 0)::int as tx_count,
                 coalesce(SUM(subtotal) * 0.05, 0)::numeric as commission
              FROM transactions
-             WHERE date >= CURRENT_DATE`
+             WHERE date >= CURRENT_DATE AND COALESCE(payment_status, 'paid') = 'paid'`
         );
         res.json(result.rows[0]);
     } catch (err) {

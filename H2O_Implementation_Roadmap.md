@@ -36,12 +36,13 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 ---
 
 ## Phase 1 — Complete core checkout (REQ-01)
-- ⬜ Card payment acceptance (Visa/Mastercard/RuPay) — needs a real payment gateway (Razorpay/PayU/Cashfree support cards + UPI in one SDK; consider replacing the fake PhonePe flow with one of these for both card and UPI).
-- ⬜ Real payment confirmation via webhook instead of the 6-second `setTimeout` in `processPhonePePayment()`.
-- ⬜ Split payment UI (e.g. part cash + part UPI) in the cart/checkout panel.
-- ⬜ Real barcode scanner input handling (HID scanners type into focused input + Enter — wire a listener on the search/cart input instead of only the "Simulate Scan" button).
+- ✅ Card + UPI via **Razorpay Checkout.js** (replaces PhonePe mock). Backend: `POST /api/payments/create-order` + `POST /api/payments/verify`.
+- ✅ Payment confirmation via signature verify + `POST /api/webhooks/razorpay` (`payment.captured` / `payment.failed`); no timer auto-complete.
+- ✅ Split tender UI: optional cash amount + Razorpay remainder in the cart panel (`payment_splits`).
+- ✅ HID barcode: `#pos-product-search` Enter exact-matches `barcode`/`sku` and adds to cart (Simulate Scan kept as fallback).
 
 **Exit criteria:** a real transaction can be taken with a real card or UPI app and reconciled against the gateway's dashboard.
+**Status:** 🟡 Code complete — add `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` on Render + webhook URL `https://h2o-pos-api.onrender.com/api/webhooks/razorpay`, then take a Test-mode payment to close Phase 1.
 
 ---
 
@@ -82,7 +83,7 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 ---
 
 ## Open decisions needed from the owner
-1. Which payment gateway to commit to for real cards + UPI (Razorpay/PayU/Cashfree) — affects Phase 1 scope and cost.
+1. ~~Payment gateway~~ → **Settled: Razorpay** (Test keys first; switch to Live when ready).
 2. ~~Hosting choice for Phase 0~~ → **Settled: Cloudflare frontend + Supabase Postgres + Render Express (`h2o-pos-api.onrender.com`).**
 3. Whether WhatsApp Business API (paid, needs Meta approval) or a cheaper SMS gateway is preferred for Phase 3 gifting automation.
 

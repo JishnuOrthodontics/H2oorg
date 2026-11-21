@@ -223,7 +223,7 @@ let salesHistory = [
         cgst: 719.91,
         sgst: 719.91,
         total: 9438.82,
-        paymentMethod: "PhonePe UPI",
+        paymentMethod: "Razorpay",
         items: [
             { name: "Royal Oud Extreme (100ml)", qty: 1, price: 7999 }
         ]
@@ -458,11 +458,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".modal-overlay").forEach(overlay => {
         overlay.addEventListener("click", (e) => {
             if (e.target === overlay) {
-                if (overlay.id === "phonepe-payment-modal") {
-                    closePhonePeModal();
-                } else {
-                    overlay.style.display = "none";
-                }
+                overlay.style.display = "none";
             }
         });
     });
@@ -866,8 +862,46 @@ function renderPosProducts() {
 
     if (searchInput) {
         searchInput.addEventListener("input", (e) => render(e.target.value));
+        // HID barcode scanners type into the focused field and send Enter
+        searchInput.addEventListener("keydown", (e) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            const code = (searchInput.value || "").trim();
+            if (!code) return;
+            if (tryAddByBarcodeOrSku(code)) {
+                searchInput.value = "";
+                render("");
+                renderPosCart();
+            } else {
+                render(code);
+            }
+        });
     }
     render();
+}
+
+function tryAddByBarcodeOrSku(code) {
+    const needle = String(code).trim().toLowerCase();
+    for (const perfume of PERFUMES) {
+        for (const variant of (perfume.variants || [])) {
+            const barcode = String(variant.barcode || "").toLowerCase();
+            const sku = String(variant.sku || "").toLowerCase();
+            if (barcode === needle || sku === needle) {
+                addToCartState(perfume, variant);
+                showScanToast(variant.barcode || variant.sku, perfume.name, variant.size);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function showScanToast(code, name, size) {
+    const toast = document.createElement("div");
+    toast.style.cssText = "position:fixed;bottom:2rem;right:2rem;background:var(--accent-emerald);color:white;padding:1rem 2rem;border-radius:4px;border:1px solid var(--primary-gold);z-index:3000;";
+    toast.innerHTML = `🔊 <strong>BEEP!</strong> Scanned: ${code}<br><small>${name} (${size}) added.</small>`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
 }
 
 // Simulate Handheld Barcode Scanner
@@ -883,21 +917,7 @@ window.simulateBarcodeScan = function() {
     const random = allVariants[Math.floor(Math.random() * allVariants.length)];
     addToCartState(random.perfume, random.variant);
     renderPosCart();
-
-    // Alert mimicking scanner beep
-    const toast = document.createElement("div");
-    toast.style.position = "fixed";
-    toast.style.bottom = "2rem";
-    toast.style.right = "2rem";
-    toast.style.background = "var(--accent-emerald)";
-    toast.style.color = "white";
-    toast.style.padding = "1rem 2rem";
-    toast.style.borderRadius = "4px";
-    toast.style.border = "1px solid var(--primary-gold)";
-    toast.style.zIndex = "3000";
-    toast.innerHTML = `🔊 <strong>BEEP!</strong> Barcode scanned: ${random.variant.barcode}<br><small>${random.perfume.name} (${random.variant.size}) added.</small>`;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2500);
+    showScanToast(random.variant.barcode, random.perfume.name, random.variant.size);
 };
 
 // Render POS Cart Column
@@ -964,6 +984,7 @@ function renderPosCart() {
     cgstEl.textContent = `₹${totalCgst.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
     sgstEl.textContent = `₹${totalSgst.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
     totalEl.textContent = `₹${finalTotal.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    if (typeof updateSplitRemainder === "function") updateSplitRemainder();
 }
 
 window.updatePosCartQty = function(variantId, change) {
@@ -984,58 +1005,46 @@ window.clearPosCart = function() {
     }
 };
 
-// --- PAYMENT INTEGRATIONS (PhonePe Dynamic UPI QR) ---
-window.processPhonePePayment = function() {
-    if (cart.length === 0) {
-        alert("Please add items to the cart before checking out.");
-        return;
-    }
+// --- PAYMENT: Cash + Razorpay (Card / UPI) + optional split tender ---
+function getCartTotals() {
+    let subtotal = 0;
+    cart.forEach(i => { subtotal += i.price * i.qty; });
+    const cgst = subtotal * 0.09;
+    const sgst = subtotal * 0.09;
+    const total = Math.round((subtotal + cgst + sgst) * 100) / 100;
+    return {
+        subtotal: Math.round(subtotal * 100) / 100,
+        cgst: Math.round(cgst * 100) / 100,
+        sgst: Math.round(sgst * 100) / 100,
+        total
+    };
+}
 
-    const totalEl = document.getElementById("pos-total");
-    const amountStr = totalEl.textContent.replace("₹", "").replace(/,/g, "");
-    const amount = parseFloat(amountStr);
-
-    // Generate dynamic QR code parameters based on PhonePe merchant specification
-    const merchantId = "H2O_PERFUME_ONLINE";
-    const transactionId = "TXN" + Date.now();
-    
-    // Standard UPI Merchant deep link for PhonePe dynamic routing
-    const upiUrl = `upi://pay?pa=${merchantId}@ybl&pn=H2O%20Perfumes&am=${amount.toFixed(2)}&mam=${amount.toFixed(2)}&tr=${transactionId}&cu=INR&mc=5311`;
-    
-    // Render QR Code (using public API qrserver)
-    const qrImageContainer = document.getElementById("phonepe-qr-code-img");
-    qrImageContainer.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}" alt="UPI QR Code">`;
-    
-    document.getElementById("phonepe-modal-amount").textContent = `₹${amount.toLocaleString('en-IN', {minimumFractionDigits:2})}`;
-    
-    // Show Modal
-    const modal = document.getElementById("phonepe-payment-modal");
-    modal.style.display = "flex";
-
-    // Simulate PhonePe Webhook payment confirmation loop
-    let countdown = 6;
-    const statusText = document.getElementById("phonepe-payment-status-text");
-    statusText.innerHTML = `Waiting for secure PhonePe payment verification... (Simulated success in ${countdown}s)`;
-    
-    const interval = setInterval(() => {
-        countdown--;
-        statusText.innerHTML = `Waiting for secure PhonePe payment verification... (Simulated success in ${countdown}s)`;
-        
-        if (countdown <= 0) {
-            clearInterval(interval);
-            completeTransaction("PhonePe UPI", transactionId);
+function getCustomerCheckoutContext() {
+    const customerSelect = document.getElementById("pos-customer-select-dropdown");
+    const customerVal = customerSelect ? customerSelect.value : "walkin";
+    let customerName = "Walk-in Customer";
+    let phoneNum = "";
+    if (customerVal !== "walkin") {
+        const customer = CUSTOMERS.find(c => c.id === customerVal);
+        if (customer) {
+            customerName = customer.name;
+            phoneNum = customer.phone;
         }
-    }, 1000);
-
-    // Store interval on window so we can clear it if they close the modal early
-    window.phonePeInterval = interval;
-};
-
-window.closePhonePeModal = function() {
-    if (window.phonePeInterval) {
-        clearInterval(window.phonePeInterval);
     }
-    document.getElementById("phonepe-payment-modal").style.display = "none";
+    return { customerSelect, customerVal, customerName, phoneNum };
+}
+
+window.updateSplitRemainder = function() {
+    const totals = getCartTotals();
+    const cashInput = document.getElementById("pos-cash-amount");
+    const remEl = document.getElementById("pos-digital-remainder");
+    if (!remEl) return;
+    let cash = parseFloat(cashInput && cashInput.value ? cashInput.value : "0");
+    if (Number.isNaN(cash) || cash < 0) cash = 0;
+    if (cash > totals.total) cash = totals.total;
+    const digital = Math.round((totals.total - cash) * 100) / 100;
+    remEl.textContent = `₹${digital.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 window.processCashPayment = function() {
@@ -1043,58 +1052,146 @@ window.processCashPayment = function() {
         alert("Please add items to the cart before checking out.");
         return;
     }
-    if (confirm("Proceed with CASH payment?")) {
-        completeTransaction("Cash");
+    if (confirm("Proceed with CASH payment for the full total?")) {
+        completeCashTransaction();
     }
 };
 
-async function completeTransaction(method, referenceId = "") {
-    // Calculate final figures
-    let subtotal = 0;
-    cart.forEach(i => subtotal += i.price * i.qty);
-    const cgst = subtotal * 0.09;
-    const sgst = subtotal * 0.09;
-    const total = subtotal + cgst + sgst;
-
-    // Fetch customer details
-    const customerSelect = document.getElementById("pos-customer-select-dropdown");
-    const customerVal = customerSelect ? customerSelect.value : "walkin";
-    let customerName = "Walk-in Customer";
-    let phoneNum = "";
-    
-    if (customerVal !== "walkin") {
-        const customer = CUSTOMERS.find(c => c.id === customerVal);
-        if (customer) {
-            customerName = customer.name;
-            phoneNum = customer.phone;
-            // Add local loyalty points (1 point per ₹10 spent)
-            customer.loyaltyPoints += Math.floor(total / 10);
-        }
+window.processRazorpayPayment = async function() {
+    if (cart.length === 0) {
+        alert("Please add items to the cart before checking out.");
+        return;
+    }
+    if (typeof Razorpay === "undefined") {
+        alert("Razorpay Checkout failed to load. Check your network and refresh.");
+        return;
     }
 
-    const txId = "tx_" + Date.now();
-    const invoiceNo = "H2O-" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
+    const totals = getCartTotals();
+    const cashInput = document.getElementById("pos-cash-amount");
+    let cashAmount = parseFloat(cashInput && cashInput.value ? cashInput.value : "0");
+    if (Number.isNaN(cashAmount) || cashAmount < 0) cashAmount = 0;
+    cashAmount = Math.round(cashAmount * 100) / 100;
+    if (cashAmount > totals.total) {
+        alert("Cash amount cannot exceed the cart total.");
+        return;
+    }
+    const digitalAmount = Math.round((totals.total - cashAmount) * 100) / 100;
+    if (digitalAmount <= 0) {
+        alert("Digital amount is ₹0. Use Cash Pay for a full-cash sale.");
+        return;
+    }
 
-    const transaction = {
-        id: txId,
-        invoiceNo: invoiceNo,
-        date: new Date().toISOString(),
-        customerName: customerName,
-        employeeName: authenticatedUser ? authenticatedUser.name : "Siddharth (Cashier)",
-        subtotal: subtotal,
-        cgst: cgst,
-        sgst: sgst,
-        total: total,
-        paymentMethod: method,
-        referenceId: referenceId,
-        items: cart.map(item => ({
-            name: `${item.name} (${item.size})`,
-            qty: item.qty,
-            price: item.price
-        }))
-    };
+    if (!useBackend) {
+        alert("Razorpay requires the cloud API. Start the backend or set config.js to the live API.");
+        return;
+    }
+
+    const { customerVal, customerName, phoneNum, customerSelect } = getCustomerCheckoutContext();
+    const invoiceNo = "H2O-" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
+    const employeeName = authenticatedUser ? authenticatedUser.name : "Siddharth (Cashier)";
+    const items = cart.map(item => ({
+        variantId: item.variantId,
+        name: `${item.name} (${item.size})`,
+        qty: item.qty,
+        price: item.price
+    }));
+
+    try {
+        const createRes = await fetch(`${API_BASE_URL}/payments/create-order`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+                invoiceNo,
+                customerId: customerVal,
+                customerName,
+                employeeName,
+                subtotal: totals.subtotal,
+                cgst: totals.cgst,
+                sgst: totals.sgst,
+                total: totals.total,
+                cashAmount,
+                digitalAmount,
+                items
+            })
+        });
+        const createData = await createRes.json().catch(() => ({}));
+        if (!createRes.ok) {
+            alert(createData.error || "Failed to create Razorpay order");
+            return;
+        }
+
+        const rzp = new Razorpay({
+            key: createData.keyId,
+            amount: createData.amount,
+            currency: createData.currency || "INR",
+            name: "H2O Perfumes",
+            description: invoiceNo + (cashAmount > 0 ? ` (Cash ₹${cashAmount} + Card/UPI ₹${digitalAmount})` : ""),
+            order_id: createData.orderId,
+            prefill: {
+                name: customerName !== "Walk-in Customer" ? customerName : "",
+                contact: phoneNum || ""
+            },
+            theme: { color: "#c9a227" },
+            handler: async function (response) {
+                try {
+                    const verifyRes = await fetch(`${API_BASE_URL}/payments/verify`, {
+                        method: "POST",
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_signature: response.razorpay_signature
+                        })
+                    });
+                    const verifyData = await verifyRes.json().catch(() => ({}));
+                    if (!verifyRes.ok) {
+                        alert(verifyData.error || "Payment received but verification failed. Check Razorpay dashboard / webhook.");
+                        return;
+                    }
+                    if (customerVal !== "walkin") {
+                        const customer = CUSTOMERS.find(c => c.id === customerVal);
+                        if (customer) customer.loyaltyPoints += Math.floor(totals.total / 10);
+                    }
+                    const methodLabel = cashAmount > 0 ? "Split: Cash+Razorpay" : "Razorpay";
+                    alert(`🎉 Payment verified!\n\nInvoice: ${invoiceNo}\nTotal: ₹${totals.total.toLocaleString("en-IN")}\nPayment: ${methodLabel}\nRef: ${response.razorpay_payment_id}`);
+                    await finishCheckoutUi({ customerSelect, phoneNum, customerName, invoiceNo, total: totals.total, txId: verifyData.transactionId });
+                } catch (err) {
+                    console.error(err);
+                    alert("Verification request failed. If money was captured, webhook will finalize the sale.");
+                }
+            }
+        });
+        rzp.on("payment.failed", function (resp) {
+            alert("Payment failed: " + ((resp.error && resp.error.description) || "Unknown error"));
+        });
+        rzp.open();
+    } catch (err) {
+        console.error(err);
+        alert("Could not start Razorpay checkout.");
+    }
+};
+
+async function completeCashTransaction() {
+    const totals = getCartTotals();
+    const { customerSelect, customerVal, customerName, phoneNum } = getCustomerCheckoutContext();
+    const invoiceNo = "H2O-" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
+    const employeeName = authenticatedUser ? authenticatedUser.name : "Siddharth (Cashier)";
+    const items = cart.map(item => ({
+        variantId: item.variantId,
+        name: `${item.name} (${item.size})`,
+        qty: item.qty,
+        price: item.price
+    }));
+
+    if (customerVal !== "walkin") {
+        const customer = CUSTOMERS.find(c => c.id === customerVal);
+        if (customer) customer.loyaltyPoints += Math.floor(totals.total / 10);
+    }
 
     let checkoutSuccess = false;
+    let txId = "tx_" + Date.now();
+
     if (useBackend) {
         try {
             const res = await fetch(`${API_BASE_URL}/transactions`, {
@@ -1104,24 +1201,24 @@ async function completeTransaction(method, referenceId = "") {
                     invoiceNo,
                     customerId: customerVal,
                     customerName,
-                    employeeName: authenticatedUser ? authenticatedUser.name : "Siddharth (Cashier)",
-                    subtotal,
-                    cgst,
-                    sgst,
-                    total,
-                    paymentMethod: method,
-                    referenceId,
-                    items: cart.map(item => ({
-                        variantId: item.variantId,
-                        name: `${item.name} (${item.size})`,
-                        qty: item.qty,
-                        price: item.price
-                    }))
+                    employeeName,
+                    subtotal: totals.subtotal,
+                    cgst: totals.cgst,
+                    sgst: totals.sgst,
+                    total: totals.total,
+                    paymentMethod: "Cash",
+                    referenceId: "",
+                    splits: [{ method: "cash", amount: totals.total, referenceId: "" }],
+                    items
                 })
             });
+            const data = await res.json().catch(() => ({}));
             if (res.ok) {
                 checkoutSuccess = true;
-                alert(`🎉 [Cloud] Transaction Completed Successfully!\n\nInvoice: ${invoiceNo}\nTotal: ₹${total.toLocaleString('en-IN')}\nPayment: ${method}`);
+                txId = data.transactionId || txId;
+                alert(`🎉 [Cloud] Transaction Completed!\n\nInvoice: ${invoiceNo}\nTotal: ₹${totals.total.toLocaleString("en-IN")}\nPayment: Cash`);
+            } else {
+                alert(data.error || "Cash transaction failed on server");
             }
         } catch (e) {
             console.error("Backend transaction failed, falling back to local...", e);
@@ -1129,40 +1226,49 @@ async function completeTransaction(method, referenceId = "") {
     }
 
     if (!checkoutSuccess) {
-        // Offline Fallback
-        salesHistory.push(transaction);
-
-        // Deduct inventory locally
+        salesHistory.push({
+            id: txId,
+            invoiceNo,
+            date: new Date().toISOString(),
+            customerName,
+            employeeName,
+            subtotal: totals.subtotal,
+            cgst: totals.cgst,
+            sgst: totals.sgst,
+            total: totals.total,
+            paymentMethod: "Cash",
+            referenceId: "",
+            items: items.map(({ name, qty, price }) => ({ name, qty, price }))
+        });
         cart.forEach(item => {
             const perfume = PERFUMES.find(p => p.id === item.perfumeId);
             if (perfume && perfume.batches && perfume.batches[0]) {
                 perfume.batches[0].qty = Math.max(0, perfume.batches[0].qty - item.qty);
             }
         });
-        alert(`🎉 [Offline] Transaction Completed Successfully!\n\nInvoice: ${invoiceNo}\nTotal: ₹${total.toLocaleString('en-IN')}\nPayment: ${method}\n\nInventory updated locally.`);
+        alert(`🎉 [Offline] Transaction Completed!\n\nInvoice: ${invoiceNo}\nTotal: ₹${totals.total.toLocaleString("en-IN")}\nPayment: Cash`);
     }
 
-    // Close PhonePe modal if open
-    closePhonePeModal();
+    await finishCheckoutUi({ customerSelect, phoneNum, customerName, invoiceNo, total: totals.total, txId });
+}
 
-    // WhatsApp Automation Simulation
+async function finishCheckoutUi({ customerSelect, phoneNum, customerName, invoiceNo, total, txId }) {
     if (phoneNum) {
-        const sendWA = confirm(`[WhatsApp Automation] Would you like to send a digital invoice to ${customerName} via WhatsApp (+91 ******${phoneNum.slice(-4)})?`);
+        const sendWA = confirm(`[WhatsApp Automation] Send digital invoice to ${customerName} (+91 ******${String(phoneNum).slice(-4)})?`);
         if (sendWA) {
-            alert(`💬 [WhatsApp API] Digital receipt sent to ${phoneNum} via WhatsApp:\n\n"Hi ${customerName}, thank you for shopping at H2O. Your digital invoice ${invoiceNo} for ₹${total.toLocaleString('en-IN')} is ready. View details here: https://h2oorg.com/i/${txId}"`);
+            alert(`💬 Digital receipt queued for ${phoneNum}: invoice ${invoiceNo} ₹${total.toLocaleString("en-IN")} (https://h2oorg.com/i/${txId || ""})`);
         }
     }
 
-    // Reset Cart
     cart = [];
+    const cashInput = document.getElementById("pos-cash-amount");
+    if (cashInput) cashInput.value = "";
+    updateSplitRemainder();
     if (customerSelect) customerSelect.value = "walkin";
     const profileDiv = document.getElementById("pos-selected-customer-profile");
     if (profileDiv) profileDiv.style.display = "none";
-    
-    // Sync fresh data from database
-    if (useBackend) {
-        await syncDataFromBackend();
-    }
+
+    if (useBackend) await syncDataFromBackend();
 
     renderPosCart();
     renderPosInventory();
@@ -1329,7 +1435,7 @@ window.exportToTally = function() {
 
             <!-- Debit Bank/Cash Account -->
             <ALLLEDGERENTRIES.LIST>
-              <LEDGERNAME>${tx.paymentMethod === "Cash" ? "Cash-in-Hand" : "PhonePe UPI Bank A/c"}</LEDGERNAME>
+              <LEDGERNAME>${tx.paymentMethod === "Cash" ? "Cash-in-Hand" : "Razorpay Bank A/c"}</LEDGERNAME>
               <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
               <AMOUNT>-${tx.total.toFixed(2)}</AMOUNT>
             </ALLLEDGERENTRIES.LIST>
