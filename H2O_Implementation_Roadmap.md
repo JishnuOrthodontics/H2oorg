@@ -47,12 +47,13 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 ---
 
 ## Phase 2 — Employee & security controls (REQ-05, part of REQ-06)
-- ⬜ Per-employee commission attribution: store `employee_id` on each transaction (currently only `employee_name` string), compute commission per staff member, not a flat 5% of total daily revenue.
-- ⬜ Refund / void flow with manager PIN or OTP override (none exists today).
-- ⬜ Price-override and stock-adjustment guard requiring manager approval.
-- ⬜ Basic clock-in/clock-out or shift log for hours tracking.
+- ✅ Per-employee commission: `employee_id` on sales; `GET /reports/summary` returns `byEmployee` (5% of that staff’s paid subtotal).
+- ✅ Void/refund: `POST /transactions/:id/void` restores stock + reverses loyalty; Manager PIN required for cashiers (`audit_overrides`).
+- ✅ Price override (cart) + stock adjust (restock / add product / catalog price) gated by Manager PIN for non-managers.
+- ✅ Shift log: `POST /shifts/clock-in|clock-out`, `GET /shifts/me`; POS topbar Clock In/Out.
 
 **Exit criteria:** Reports tab can show "sales & commission by staff member"; a cashier cannot refund or edit stock without a manager PIN.
+**Status:** ✅ Complete (Manager PIN override; no SMS OTP).
 
 ---
 

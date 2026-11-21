@@ -71,6 +71,7 @@ router.post('/create-order', authenticateToken, async (req, res) => {
         customerId: customerId || 'walkin',
         customerName,
         employeeName: employeeName || (req.user && req.user.name) || 'Cashier',
+        employeeId: req.user && req.user.id,
         subtotal,
         cgst,
         sgst,

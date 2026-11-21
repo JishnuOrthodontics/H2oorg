@@ -82,6 +82,12 @@ Never commit `.env`. Production secrets live in the Render dashboard.
    Events: `payment.captured`, `payment.failed`.
 3. Client verify (`POST /api/payments/verify`) is the primary UX path; webhook reconciles if the browser closes mid-flow. Free-tier cold starts can delay webhooks — wake the service before a live sale if needed.
 
+### Staff security (Phase 2)
+
+- Sales store `employee_id` from the JWT; Reports shows **Sales & commission by staff** (5% of paid subtotal).
+- Cashiers need a **Manager PIN** (seeded manager: `jishnu` / `9999`) to void sales, edit cart prices, restock, or add products. Managers skip the prompt.
+- POS topbar **Clock In / Clock Out** writes `shift_logs` (`GET /api/shifts/me`).
+
 ## Production
 
 - **Site:** https://www.h2oorg.com  
@@ -99,7 +105,8 @@ Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the `
 | `npm run db:seed` | Schema + seed data (destructive) |
 | `npm run db:migrate-pii` | Encrypt existing plaintext customer PII |
 | `npm run db:migrate-payments` | Add payment columns / `payment_orders` / `payment_splits` |
+| `npm run db:migrate-phase2` | employee_id, void fields, `shift_logs`, `audit_overrides` |
 
 ## Roadmap
 
-Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0** complete. **Phase 1** (Razorpay) code is in; flip Test keys + one real payment to close exit criteria.
+Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0–2** complete in code. Phase 1 still needs Razorpay Test keys on Render for live card/UPI.

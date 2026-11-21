@@ -6,6 +6,8 @@ validateEnv();
 
 const schema = `
 -- Drop existing tables if they exist
+DROP TABLE IF EXISTS audit_overrides CASCADE;
+DROP TABLE IF EXISTS shift_logs CASCADE;
 DROP TABLE IF EXISTS payment_splits CASCADE;
 DROP TABLE IF EXISTS payment_orders CASCADE;
 DROP TABLE IF EXISTS transaction_items CASCADE;
@@ -90,7 +92,11 @@ CREATE TABLE transactions (
     payment_status VARCHAR(20) NOT NULL DEFAULT 'paid',
     razorpay_order_id VARCHAR(100),
     razorpay_payment_id VARCHAR(100),
-    customer_id VARCHAR(50)
+    customer_id VARCHAR(50),
+    employee_id INT REFERENCES users(id),
+    voided_at TIMESTAMPTZ,
+    voided_by INT REFERENCES users(id),
+    void_reason TEXT
 );
 
 -- 7. Transaction Items Table
@@ -122,6 +128,25 @@ CREATE TABLE payment_splits (
     method VARCHAR(50) NOT NULL,
     amount NUMERIC(10, 2) NOT NULL,
     reference_id VARCHAR(100)
+);
+
+-- 10. Shift clock-in / clock-out
+CREATE TABLE shift_logs (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    clock_in TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    clock_out TIMESTAMPTZ,
+    notes TEXT
+);
+
+-- 11. Manager override audit trail
+CREATE TABLE audit_overrides (
+    id SERIAL PRIMARY KEY,
+    action VARCHAR(50) NOT NULL,
+    actor_user_id INT REFERENCES users(id),
+    manager_user_id INT REFERENCES users(id),
+    detail JSONB,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 `;
 

@@ -9,6 +9,7 @@ const db = require('../config/db');
  * @param {string} [sale.customerId]
  * @param {string} sale.customerName
  * @param {string} sale.employeeName
+ * @param {number} [sale.employeeId]
  * @param {number} sale.subtotal
  * @param {number} sale.cgst
  * @param {number} sale.sgst
@@ -34,8 +35,8 @@ async function finalizeSale(sale, externalClient = null) {
         await client.query(
             `INSERT INTO transactions (
                 id, invoice_no, customer_name, employee_name, subtotal, cgst, sgst, total,
-                payment_method, reference_id, payment_status, razorpay_order_id, razorpay_payment_id, customer_id
-             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+                payment_method, reference_id, payment_status, razorpay_order_id, razorpay_payment_id, customer_id, employee_id
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
             [
                 transactionId,
                 sale.invoiceNo,
@@ -50,7 +51,8 @@ async function finalizeSale(sale, externalClient = null) {
                 sale.paymentStatus || 'paid',
                 sale.razorpayOrderId || null,
                 sale.razorpayPaymentId || null,
-                sale.customerId && sale.customerId !== 'walkin' ? sale.customerId : null
+                sale.customerId && sale.customerId !== 'walkin' ? sale.customerId : null,
+                sale.employeeId || null
             ]
         );
 

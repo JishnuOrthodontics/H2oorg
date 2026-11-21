@@ -327,10 +327,14 @@
                         <span id="pos-active-tab-title">Checkout Terminal</span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 1.5rem;">
+                        <button class="btn btn-outline" style="padding: 0.4rem 1rem; font-size: 0.75rem;" onclick="toggleShiftClock()" id="btn-shift-clock">
+                            <i class="fas fa-clock" style="margin-right: 0.4rem;"></i> <span id="shift-clock-label">Clock In</span>
+                        </button>
+                        <span id="shift-status-text" style="font-size: 0.7rem; color: var(--text-muted);"></span>
                         <button class="btn btn-outline" style="padding: 0.4rem 1rem; font-size: 0.75rem; border-color: var(--primary-gold); color: var(--primary-gold);" onclick="simulateBarcodeScan()">
                             <i class="fas fa-barcode" style="margin-right: 0.5rem;"></i> Simulate Barcode Scan
                         </button>
-                        <div style="text-align: right; font-size: 0.8rem; color: var(--text-secondary);">
+                        <div style="text-align: right; font-size: 0.8rem; color: var(--text-secondary);" id="pos-topbar-user">
                             <div><strong>Siddharth M.</strong> (Cashier)</div>
                             <div style="font-size: 0.7rem; color: var(--text-muted);">Kochi Branch</div>
                         </div>
@@ -506,8 +510,26 @@
                             <div class="kpi-card">
                                 <div class="kpi-title">Est. Staff Commissions</div>
                                 <div class="kpi-value" id="rep-commission">₹0</div>
-                                <div class="kpi-change positive">5% on Premium Brands</div>
+                                <div class="kpi-change positive">5% of subtotal by staff</div>
                             </div>
+                        </div>
+
+                        <!-- Per-employee commission -->
+                        <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1.5rem; margin-bottom:1.5rem;">
+                            <h4 style="font-size:1.2rem; margin-bottom:1rem;">Sales &amp; Commission by Staff</h4>
+                            <table class="pos-table">
+                                <thead>
+                                    <tr>
+                                        <th>Staff</th>
+                                        <th>Txns</th>
+                                        <th>Sales (ex-tax)</th>
+                                        <th>Commission (5%)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pos-reports-staff-body">
+                                    <tr><td colspan="4" style="color:var(--text-muted);">No sales yet today.</td></tr>
+                                </tbody>
+                            </table>
                         </div>
 
                         <!-- Sales History & Tally Export Trigger -->
@@ -525,8 +547,11 @@
                                         <th>Time</th>
                                         <th>Invoice No</th>
                                         <th>Customer</th>
+                                        <th>Staff</th>
                                         <th>Payment Mode</th>
+                                        <th>Status</th>
                                         <th>Amount</th>
+                                        <th></th>
                                     </tr>
                                 </thead>
                                 <tbody id="pos-reports-history-body">
@@ -806,6 +831,21 @@
                 <button class="btn btn-gold" style="font-size: 0.8rem;" onclick="saveRestock()">
                     <i class="fas fa-truck-loading" style="margin-right: 0.5rem;"></i> Update Stock
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manager PIN override modal -->
+    <div class="modal-overlay" id="manager-pin-modal" style="display:none;">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <button class="modal-close" onclick="closeManagerPinModal()">&times;</button>
+            <h3 class="font-serif" style="font-size: 1.5rem; color: var(--primary-gold);">Manager Approval</h3>
+            <p id="manager-pin-reason" style="color: var(--text-secondary); font-size: 0.85rem; margin: 0.75rem 0 1.25rem;">Enter a Manager PIN to continue.</p>
+            <input type="password" id="manager-pin-input" class="pos-input" placeholder="Manager PIN" maxlength="10" style="text-align:center; letter-spacing:0.2em; font-size:1.1rem;" inputmode="numeric">
+            <p id="manager-pin-error" style="display:none; color:#ef4444; font-size:0.75rem; margin-top:0.5rem;">Invalid manager PIN</p>
+            <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.25rem;">
+                <button class="btn btn-outline" style="font-size:0.8rem;" onclick="closeManagerPinModal()">Cancel</button>
+                <button class="btn btn-gold" style="font-size:0.8rem;" onclick="submitManagerPin()">Approve</button>
             </div>
         </div>
     </div>

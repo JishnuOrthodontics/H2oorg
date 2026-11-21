@@ -6,6 +6,7 @@ const paymentsRouter = require('./routes/payments');
 const webhooksRouter = require('./routes/webhooks');
 const db = require('./config/db');
 const { migratePayments } = require('./scripts/migrate-payments');
+const { migratePhase2 } = require('./scripts/migrate-phase2');
 const { isConfigured } = require('./config/razorpay');
 
 validateEnv();
@@ -63,12 +64,13 @@ app.get('/', (req, res) => {
     res.send('H2O Perfume Retail POS Cloud Backend API is running.');
 });
 
-migratePayments()
-    .catch((err) => console.error('Payment migration on boot failed:', err.message))
-    .finally(() => {
-        app.listen(PORT, '0.0.0.0', () => {
-            console.log(`🚀 Server running on port ${PORT}`);
-            console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
-            console.log(`💳 Razorpay: ${isConfigured() ? 'configured' : 'not configured (set RAZORPAY_* env)'}`);
-        });
+Promise.all([
+    migratePayments().catch((err) => console.error('Payment migration on boot failed:', err.message)),
+    migratePhase2().catch((err) => console.error('Phase 2 migration on boot failed:', err.message))
+]).finally(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
+        console.log(`💳 Razorpay: ${isConfigured() ? 'configured' : 'not configured (set RAZORPAY_* env)'}`);
     });
+});

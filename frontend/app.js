@@ -65,11 +65,13 @@ async function syncDataFromBackend() {
                         date: t.date,
                         customerName: t.customer_name,
                         employeeName: t.employee_name,
+                        employeeId: t.employee_id,
                         subtotal: parseFloat(t.subtotal),
                         cgst: parseFloat(t.cgst),
                         sgst: parseFloat(t.sgst),
                         total: parseFloat(t.total),
                         paymentMethod: t.payment_method,
+                        paymentStatus: t.payment_status || "paid",
                         referenceId: t.reference_id,
                         items: t.items || []
                     });
@@ -79,6 +81,7 @@ async function syncDataFromBackend() {
             const repRes = await fetch(`${API_BASE_URL}/reports/summary`, { headers: getAuthHeaders() });
             if (repRes.ok) {
                 const repData = await repRes.json();
+                lastReportByEmployee = repData.byEmployee || [];
                 const salesVal = document.getElementById("rep-total-sales");
                 const taxVal = document.getElementById("rep-total-tax");
                 const txVal = document.getElementById("rep-total-tx");
@@ -212,6 +215,61 @@ const CUSTOMERS = [
 
 // --- Simulated Database / State ---
 let cart = [];
+let authenticatedUser = null;
+let lastReportByEmployee = [];
+let openShift = null;
+let _managerPinResolver = null;
+
+function isManagerUser(user) {
+    if (!user || !user.role) return false;
+    const r = String(user.role).toLowerCase();
+    return r === "manager" || r.includes("owner");
+}
+
+function promptManagerPin(reasonText) {
+    return new Promise((resolve) => {
+        if (isManagerUser(authenticatedUser)) {
+            resolve({ skipped: true, managerPin: null });
+            return;
+        }
+        const modal = document.getElementById("manager-pin-modal");
+        const reasonEl = document.getElementById("manager-pin-reason");
+        const input = document.getElementById("manager-pin-input");
+        const err = document.getElementById("manager-pin-error");
+        if (reasonEl) reasonEl.textContent = reasonText || "Enter a Manager PIN to continue.";
+        if (err) err.style.display = "none";
+        if (input) input.value = "";
+        _managerPinResolver = resolve;
+        if (modal) modal.style.display = "flex";
+        if (input) setTimeout(() => input.focus(), 50);
+    });
+}
+
+window.closeManagerPinModal = function() {
+    const modal = document.getElementById("manager-pin-modal");
+    if (modal) modal.style.display = "none";
+    if (_managerPinResolver) {
+        _managerPinResolver(null);
+        _managerPinResolver = null;
+    }
+};
+
+window.submitManagerPin = function() {
+    const input = document.getElementById("manager-pin-input");
+    const pin = input ? input.value.trim() : "";
+    const err = document.getElementById("manager-pin-error");
+    if (!pin) {
+        if (err) err.style.display = "block";
+        return;
+    }
+    const modal = document.getElementById("manager-pin-modal");
+    if (modal) modal.style.display = "none";
+    if (_managerPinResolver) {
+        _managerPinResolver({ skipped: false, managerPin: pin });
+        _managerPinResolver = null;
+    }
+};
+
 let salesHistory = [
     {
         id: "tx_1",
@@ -296,13 +354,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // --- Staff Authentication & Session State ---
     const STAFF_ACCOUNTS = {
-        siddharth: { name: "Siddharth M.", role: "Cashier", pin: "1234" },
-        meera: { name: "Meera K.", role: "Sales Associate", pin: "5678" },
-        jishnu: { name: "Dr. Jishnu Sen", role: "Store Manager & Owner", pin: "9999" }
+        siddharth: { id: 1, name: "Siddharth M.", role: "Cashier", pin: "1234" },
+        meera: { id: 2, name: "Meera K.", role: "Sales Associate", pin: "5678" },
+        jishnu: { id: 3, name: "Dr. Jishnu Sen", role: "Store Manager & Owner", pin: "9999" }
     };
 
     let currentEnteredPin = "";
-    let authenticatedUser = null;
 
     window.openLoginModal = function() {
         const modal = document.getElementById("pos-login-modal");
@@ -407,6 +464,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // Set active user session in POS
                 updatePosUserSession();
                 initPosTerminal();
+                refreshShiftStatus();
                 
                 // Reset lock icon
                 if (lockIcon) {
@@ -434,18 +492,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function updatePosUserSession() {
-        // Update cashier name in topbar
-        const topbarUserContainer = document.querySelector(".pos-topbar div[style*='text-align: right']");
-        if (topbarUserContainer) {
+        const topbarUserContainer = document.getElementById("pos-topbar-user");
+        if (topbarUserContainer && authenticatedUser) {
             topbarUserContainer.innerHTML = `
                 <div><strong>${authenticatedUser.name}</strong> (${authenticatedUser.role})</div>
                 <div style="font-size: 0.7rem; color: var(--text-muted);">Kochi Branch</div>
             `;
         }
 
-        // Role-Based Access Control (RBAC) (REQ-05: Security Permissions)
         const reportsTabBtn = document.querySelector(".pos-menu-item[data-tab='pos-reports']");
-        if (reportsTabBtn) {
+        if (reportsTabBtn && authenticatedUser) {
             if (authenticatedUser.role === "Cashier" || authenticatedUser.role === "Sales Associate") {
                 reportsTabBtn.classList.add("locked");
             } else {
@@ -967,6 +1023,7 @@ function renderPosCart() {
             <div class="pos-cart-item-info">
                 <h5>${item.name}</h5>
                 <span>${item.size} | ${item.concentration} | GST 18%</span>
+                <button type="button" onclick="overrideCartPrice('${item.variantId}')" style="background:none;border:none;color:var(--primary-gold);font-size:0.65rem;cursor:pointer;padding:0;margin-top:0.2rem;">Edit price</button>
             </div>
             <div class="pos-cart-item-qty">
                 <button class="qty-btn" onclick="updatePosCartQty('${item.variantId}', -1)">-</button>
@@ -1003,6 +1060,46 @@ window.clearPosCart = function() {
         cart = [];
         renderPosCart();
     }
+};
+
+window.overrideCartPrice = async function(variantId) {
+    const item = cart.find(i => i.variantId === variantId);
+    if (!item) return;
+    const raw = prompt(`New unit price for ${item.name} (current ₹${item.price}):`, String(item.price));
+    if (raw == null) return;
+    const newPrice = parseFloat(raw);
+    if (Number.isNaN(newPrice) || newPrice <= 0) {
+        alert("Enter a valid price.");
+        return;
+    }
+    const approval = await promptManagerPin(`Approve cart price override for ${item.name}`);
+    if (!approval) return;
+
+    if (useBackend && !approval.skipped) {
+        try {
+            const res = await fetch(`${API_BASE_URL}/overrides/price`, {
+                method: "POST",
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    variantId,
+                    oldPrice: item.price,
+                    newPrice,
+                    managerPin: approval.managerPin
+                })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || "Manager approval failed");
+                return;
+            }
+        } catch (e) {
+            alert("Could not verify manager PIN with server.");
+            return;
+        }
+    }
+
+    item.price = newPrice;
+    renderPosCart();
 };
 
 // --- PAYMENT: Cash + Razorpay (Card / UPI) + optional split tender ---
@@ -1355,39 +1452,172 @@ function renderPosReports() {
 
     if (!totalSalesEl) return;
 
+    const paidTx = salesHistory.filter(tx => (tx.paymentStatus || "paid") === "paid");
     let totalRevenue = 0;
     let totalTax = 0;
+    const staffMap = {};
 
-    salesHistory.forEach(tx => {
+    paidTx.forEach(tx => {
         totalRevenue += tx.total;
         totalTax += (tx.cgst + tx.sgst);
+        const key = tx.employeeId || tx.employeeName || "Unknown";
+        if (!staffMap[key]) {
+            staffMap[key] = { name: tx.employeeName || "Unknown", sales: 0, tx_count: 0 };
+        }
+        staffMap[key].sales += tx.subtotal;
+        staffMap[key].tx_count += 1;
     });
 
-    // 5% commission on premium fragrances for employees
-    const commissionEarned = (totalRevenue - totalTax) * 0.05;
+    const commissionEarned = Object.values(staffMap).reduce((s, row) => s + row.sales * 0.05, 0);
 
-    totalSalesEl.textContent = `₹${totalRevenue.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
-    totalTaxEl.textContent = `₹${totalTax.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
-    totalTxEl.textContent = salesHistory.length;
-    commissionEl.textContent = `₹${commissionEarned.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+    // Prefer cloud byEmployee when available
+    const staffRows = (lastReportByEmployee && lastReportByEmployee.length)
+        ? lastReportByEmployee
+        : Object.values(staffMap).map(r => ({
+            name: r.name,
+            sales: r.sales,
+            commission: r.sales * 0.05,
+            tx_count: r.tx_count
+        }));
 
-    // Render sales history table in Reports tab
+    if (!(lastReportByEmployee && lastReportByEmployee.length)) {
+        totalSalesEl.textContent = `₹${totalRevenue.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+        totalTaxEl.textContent = `₹${totalTax.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+        totalTxEl.textContent = paidTx.length;
+        commissionEl.textContent = `₹${commissionEarned.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+    }
+
+    const staffBody = document.getElementById("pos-reports-staff-body");
+    if (staffBody) {
+        staffBody.innerHTML = "";
+        if (!staffRows.length) {
+            staffBody.innerHTML = `<tr><td colspan="4" style="color:var(--text-muted);">No sales yet today.</td></tr>`;
+        } else {
+            staffRows.forEach(row => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${row.name}</td>
+                    <td>${row.tx_count || row.txCount || 0}</td>
+                    <td>₹${parseFloat(row.sales).toLocaleString('en-IN', {maximumFractionDigits:0})}</td>
+                    <td>₹${parseFloat(row.commission).toLocaleString('en-IN', {maximumFractionDigits:0})}</td>
+                `;
+                staffBody.appendChild(tr);
+            });
+        }
+    }
+
     const historyBody = document.getElementById("pos-reports-history-body");
     if (historyBody) {
         historyBody.innerHTML = "";
         salesHistory.forEach(tx => {
+            const status = tx.paymentStatus || "paid";
+            const canVoid = status === "paid";
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td><small>${new Date(tx.date).toLocaleDateString()} ${new Date(tx.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small></td>
                 <td><strong>${tx.invoiceNo}</strong></td>
                 <td>${tx.customerName}</td>
+                <td>${tx.employeeName || "—"}</td>
                 <td>${tx.paymentMethod}</td>
+                <td>${status}</td>
                 <td>₹${tx.total.toLocaleString('en-IN')}</td>
+                <td>${canVoid ? `<button class="btn btn-outline" style="font-size:0.65rem;padding:0.25rem 0.5rem;" onclick="voidTransaction('${tx.id}')">Void</button>` : ""}</td>
             `;
             historyBody.appendChild(tr);
         });
     }
 }
+
+window.voidTransaction = async function(txId) {
+    if (!txId) return;
+    const reason = prompt("Reason for void / refund:");
+    if (reason == null) return;
+    const approval = await promptManagerPin("Manager PIN required to void this sale");
+    if (!approval) return;
+
+    if (!useBackend) {
+        const tx = salesHistory.find(t => t.id === txId);
+        if (tx) tx.paymentStatus = "voided";
+        renderPosReports();
+        alert("Sale voided locally (offline).");
+        return;
+    }
+
+    try {
+        const body = { reason };
+        if (!approval.skipped) body.managerPin = approval.managerPin;
+        const res = await fetch(`${API_BASE_URL}/transactions/${encodeURIComponent(txId)}/void`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(data.error || "Void failed");
+            return;
+        }
+        alert(data.message || "Transaction voided");
+        await syncDataFromBackend();
+        renderPosReports();
+        renderPosInventory();
+    } catch (e) {
+        console.error(e);
+        alert("Void request failed");
+    }
+};
+
+async function refreshShiftStatus() {
+    const label = document.getElementById("shift-clock-label");
+    const status = document.getElementById("shift-status-text");
+    if (!useBackend || !localStorage.getItem("h2o_pos_token")) {
+        openShift = null;
+        if (label) label.textContent = "Clock In";
+        if (status) status.textContent = "";
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE_URL}/shifts/me`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        openShift = data.openShift || null;
+        if (label) label.textContent = openShift ? "Clock Out" : "Clock In";
+        if (status) {
+            const hrs = Number(data.hoursToday || 0).toFixed(2);
+            status.textContent = openShift
+                ? `On shift · ${hrs}h today`
+                : (hrs > 0 ? `${hrs}h today` : "");
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+window.toggleShiftClock = async function() {
+    if (!useBackend) {
+        alert("Shift clock requires the cloud API.");
+        return;
+    }
+    if (!localStorage.getItem("h2o_pos_token")) {
+        alert("Log in first.");
+        return;
+    }
+    try {
+        const endpoint = openShift ? "/shifts/clock-out" : "/shifts/clock-in";
+        const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({})
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(data.error || "Shift update failed");
+            return;
+        }
+        await refreshShiftStatus();
+    } catch (e) {
+        alert("Shift request failed");
+    }
+};
 
 // --- Tally ERP XML Export Engine (REQ-06 / Independent Ledger) ---
 window.exportToTally = function() {
@@ -1403,7 +1633,7 @@ window.exportToTally = function() {
       </REQUESTDESC>
       <REQUESTDATA>\n`;
 
-    salesHistory.forEach(tx => {
+    salesHistory.filter(tx => (tx.paymentStatus || "paid") === "paid").forEach(tx => {
         const cleanDate = tx.date.split("T")[0].replace(/-/g, "");
         tallyXml += `        <TALLYMESSAGE xmlns:UDF="TallyUDF">
           <VOUCHER VCHTYPE="Sales" ACTION="Create" OBJVIEW="AccountingVoucher">
@@ -1765,6 +1995,9 @@ window.saveNewInventory = async function() {
         return;
     }
 
+    const approval = await promptManagerPin("Manager PIN required to add inventory");
+    if (!approval) return;
+
     const notes = notesStr ? notesStr.split(",").map(n => n.trim()).filter(n => n) : ["Fragrance Blends"];
 
     // Generate random barcode and SKU
@@ -1783,17 +2016,23 @@ window.saveNewInventory = async function() {
     let savedOnCloud = false;
     if (useBackend) {
         try {
+            const payload = {
+                name, brand, family, size, concentration: conc,
+                price, cost, batchNo, qty, expiry, notes: notesStr
+            };
+            if (!approval.skipped) payload.managerPin = approval.managerPin;
             const res = await fetch(`${API_BASE_URL}/products`, {
                 method: "POST",
                 headers: getAuthHeaders(),
-                body: JSON.stringify({
-                    name, brand, family, size, concentration: conc,
-                    price, cost, batchNo, qty, expiry, notes: notesStr
-                })
+                body: JSON.stringify(payload)
             });
+            const data = await res.json().catch(() => ({}));
             if (res.ok) {
                 savedOnCloud = true;
                 alert(`📦 [Cloud] Product "${name} (${size})" registered and stocked successfully!`);
+            } else {
+                alert(data.error || "Failed to save product");
+                return;
             }
         } catch (e) {
             console.error("Backend product save failed, falling back to local...", e);
@@ -1891,23 +2130,32 @@ window.saveRestock = async function() {
         return;
     }
 
+    const approval = await promptManagerPin("Manager PIN required to restock inventory");
+    if (!approval) return;
+
     let restockedOnCloud = false;
     if (useBackend) {
         try {
+            const payload = {
+                perfumeId: activeRestockPerfumeId,
+                variantId: activeRestockVariantId,
+                qty,
+                batchNo,
+                expiry
+            };
+            if (!approval.skipped) payload.managerPin = approval.managerPin;
             const res = await fetch(`${API_BASE_URL}/products/restock`, {
                 method: "POST",
                 headers: getAuthHeaders(),
-                body: JSON.stringify({
-                    perfumeId: activeRestockPerfumeId,
-                    variantId: activeRestockVariantId,
-                    qty,
-                    batchNo,
-                    expiry
-                })
+                body: JSON.stringify(payload)
             });
+            const data = await res.json().catch(() => ({}));
             if (res.ok) {
                 restockedOnCloud = true;
                 alert(`⚡ [Cloud] Stock updated successfully!`);
+            } else {
+                alert(data.error || "Restock failed");
+                return;
             }
         } catch (e) {
             console.error("Backend restock failed, falling back to local...", e);

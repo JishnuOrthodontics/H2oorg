@@ -4,31 +4,22 @@ const jwt = require('jsonwebtoken');
 const db = require('../config/db');
 const { encrypt, decrypt } = require('../config/crypto');
 const { finalizeSale } = require('../services/sales');
+const { voidSale } = require('../services/voidSale');
+const {
+    authenticateToken,
+    isManagerRole,
+    assertManagerPin,
+    requireManagerOverride,
+    logAuditOverride,
+    JWT_SECRET
+} = require('../middleware/auth');
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-// --- AUTH MIDDLEWARE ---
-function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-    
-    if (!token) {
-        return res.status(401).json({ error: 'Unauthorized: Access token missing' });
-    }
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) {
-            return res.status(403).json({ error: 'Forbidden: Invalid token' });
-        }
-        req.user = user;
-        next();
-    });
-}
+const COMMISSION_RATE = 0.05;
 
 // --- STAFF LOGIN ---
 router.post('/auth/login', async (req, res) => {
     const { username, pin } = req.body;
-    
+
     if (!username || !pin) {
         return res.status(400).json({ error: 'Username and PIN are required' });
     }
@@ -53,6 +44,7 @@ router.post('/auth/login', async (req, res) => {
         res.json({
             token,
             user: {
+                id: user.id,
                 name: user.name,
                 role: user.role,
                 username: user.username
@@ -61,6 +53,16 @@ router.post('/auth/login', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Database error during login' });
+    }
+});
+
+// --- VERIFY MANAGER PIN (for UI pre-check) ---
+router.post('/auth/verify-manager', authenticateToken, async (req, res) => {
+    try {
+        const manager = await assertManagerPin(req.body.pin || req.body.managerPin);
+        res.json({ ok: true, manager: { id: manager.id, name: manager.name, role: manager.role } });
+    } catch (err) {
+        res.status(err.status || 403).json({ error: err.message || 'Invalid manager PIN' });
     }
 });
 
@@ -95,7 +97,7 @@ router.get('/products', async (req, res) => {
     }
 });
 
-// --- ADD NEW PRODUCT / VARIANT ---
+// --- ADD NEW PRODUCT / VARIANT (manager PIN if cashier) ---
 router.post('/products', authenticateToken, async (req, res) => {
     const { name, brand, family, size, concentration, price, cost, batchNo, qty, expiry, notes } = req.body;
 
@@ -104,10 +106,10 @@ router.post('/products', authenticateToken, async (req, res) => {
     }
 
     try {
-        // Start transaction
+        const manager = await requireManagerOverride(req);
+
         await db.query('BEGIN');
 
-        // Check if perfume exists
         let perfumeId = 'p_' + Date.now();
         const perfCheck = await db.query(
             'SELECT id FROM perfumes WHERE LOWER(name) = LOWER($1) AND LOWER(brand) = LOWER($2)',
@@ -117,7 +119,6 @@ router.post('/products', authenticateToken, async (req, res) => {
         if (perfCheck.rows.length > 0) {
             perfumeId = perfCheck.rows[0].id;
         } else {
-            // Insert perfume
             const ingredientNotes = notes ? notes.split(',').map(n => n.trim()) : ['Fragrance Blends'];
             await db.query(
                 'INSERT INTO perfumes (id, name, brand, family, gender, notes, image, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
@@ -125,9 +126,8 @@ router.post('/products', authenticateToken, async (req, res) => {
             );
         }
 
-        // Insert variant
         const variantId = 'v_' + Date.now();
-        const sku = (brand.substring(0,3) + '-' + name.substring(0,3) + '-' + concentration + '-' + size.replace(/\D/g,'')).toUpperCase();
+        const sku = (brand.substring(0, 3) + '-' + name.substring(0, 3) + '-' + concentration + '-' + size.replace(/\D/g, '')).toUpperCase();
         const barcode = '890' + Math.floor(100000000 + Math.random() * 900000000);
 
         await db.query(
@@ -135,7 +135,6 @@ router.post('/products', authenticateToken, async (req, res) => {
             [variantId, perfumeId, size, concentration, price, sku, barcode]
         );
 
-        // Insert batch
         const batchId = 'b_' + Date.now();
         await db.query(
             'INSERT INTO batches (id, perfume_id, variant_id, batch_no, mfg_date, exp_date, cost, qty_current, qty_initial) VALUES ($1, $2, $3, $4, CURRENT_DATE, $5, $6, $7, $7)',
@@ -143,15 +142,23 @@ router.post('/products', authenticateToken, async (req, res) => {
         );
 
         await db.query('COMMIT');
+
+        await logAuditOverride({
+            action: 'stock_adjust',
+            actorUserId: req.user.id,
+            managerUserId: manager.id,
+            detail: { type: 'add_product', sku, barcode, qty }
+        });
+
         res.status(201).json({ message: 'Product variant registered successfully', sku, barcode });
     } catch (err) {
         await db.query('ROLLBACK');
         console.error(err);
-        res.status(500).json({ error: 'Failed to create product variant' });
+        res.status(err.status || 500).json({ error: err.message || 'Failed to create product variant' });
     }
 });
 
-// --- RESTOCK / ADD STOCK ---
+// --- RESTOCK / ADD STOCK (manager PIN if cashier) ---
 router.post('/products/restock', authenticateToken, async (req, res) => {
     const { perfumeId, variantId, qty, batchNo, expiry } = req.body;
 
@@ -160,22 +167,20 @@ router.post('/products/restock', authenticateToken, async (req, res) => {
     }
 
     try {
-        // Check if this batch exists for this variant
+        const manager = await requireManagerOverride(req);
+
         const batchCheck = await db.query(
             'SELECT id FROM batches WHERE variant_id = $1 AND batch_no = $2',
             [variantId, batchNo]
         );
 
         if (batchCheck.rows.length > 0) {
-            // Update existing batch quantity
             await db.query(
                 'UPDATE batches SET qty_current = qty_current + $1, exp_date = $2 WHERE id = $3',
                 [qty, expiry, batchCheck.rows[0].id]
             );
         } else {
-            // Create a new batch shipment
             const batchId = 'b_' + Date.now();
-            // Fetch fallback cost
             const costResult = await db.query('SELECT cost FROM batches WHERE variant_id = $1 LIMIT 1', [variantId]);
             const cost = costResult.rows.length > 0 ? costResult.rows[0].cost : 1500.00;
 
@@ -185,10 +190,66 @@ router.post('/products/restock', authenticateToken, async (req, res) => {
             );
         }
 
+        await logAuditOverride({
+            action: 'stock_adjust',
+            actorUserId: req.user.id,
+            managerUserId: manager.id,
+            detail: { type: 'restock', variantId, qty, batchNo }
+        });
+
         res.json({ message: 'Stock restocked successfully' });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to restock variant' });
+        res.status(err.status || 500).json({ error: err.message || 'Failed to restock variant' });
+    }
+});
+
+// --- PERMANENT CATALOG PRICE EDIT (manager PIN if cashier) ---
+router.post('/products/:variantId/price', authenticateToken, async (req, res) => {
+    const { variantId } = req.params;
+    const { price } = req.body;
+    if (price == null || Number(price) <= 0) {
+        return res.status(400).json({ error: 'Valid price is required' });
+    }
+
+    try {
+        const manager = await requireManagerOverride(req);
+        const result = await db.query(
+            'UPDATE variants SET price = $1 WHERE id = $2 RETURNING id, price',
+            [price, variantId]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Variant not found' });
+        }
+
+        await logAuditOverride({
+            action: 'price_edit',
+            actorUserId: req.user.id,
+            managerUserId: manager.id,
+            detail: { variantId, price: Number(price) }
+        });
+
+        res.json({ message: 'Price updated', variantId, price: Number(result.rows[0].price) });
+    } catch (err) {
+        console.error(err);
+        res.status(err.status || 500).json({ error: err.message || 'Failed to update price' });
+    }
+});
+
+// --- AUDIT: cart price override log (cashier must send managerPin) ---
+router.post('/overrides/price', authenticateToken, async (req, res) => {
+    const { variantId, oldPrice, newPrice } = req.body;
+    try {
+        const manager = await requireManagerOverride(req);
+        await logAuditOverride({
+            action: 'price_override',
+            actorUserId: req.user.id,
+            managerUserId: manager.id,
+            detail: { variantId, oldPrice, newPrice }
+        });
+        res.json({ ok: true, managerName: manager.name });
+    } catch (err) {
+        res.status(err.status || 403).json({ error: err.message || 'Manager approval failed' });
     }
 });
 
@@ -289,7 +350,8 @@ router.post('/transactions', authenticateToken, async (req, res) => {
             invoiceNo,
             customerId,
             customerName,
-            employeeName,
+            employeeName: employeeName || req.user.name,
+            employeeId: req.user.id,
             subtotal,
             cgst,
             sgst,
@@ -305,6 +367,32 @@ router.post('/transactions', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Transaction failed' });
+    }
+});
+
+// --- VOID / REFUND (manager PIN required for cashiers) ---
+router.post('/transactions/:id/void', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const reason = (req.body && req.body.reason) || '';
+
+    try {
+        const manager = await requireManagerOverride(req);
+        const result = await voidSale(id, { voidedBy: manager.id, reason });
+
+        await logAuditOverride({
+            action: 'refund',
+            actorUserId: req.user.id,
+            managerUserId: manager.id,
+            detail: { transactionId: id, reason, alreadyVoided: result.alreadyVoided }
+        });
+
+        res.json({
+            message: result.alreadyVoided ? 'Transaction was already voided' : 'Transaction voided',
+            transactionId: id
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(err.status || 500).json({ error: err.message || 'Void failed' });
     }
 });
 
@@ -327,22 +415,110 @@ router.get('/transactions/today', authenticateToken, async (req, res) => {
     }
 });
 
-// --- REPORTS: DAILY SUMMARY KPI METRICS ---
+// --- REPORTS: DAILY SUMMARY + PER-EMPLOYEE COMMISSION ---
 router.get('/reports/summary', authenticateToken, async (req, res) => {
     try {
-        const result = await db.query(
+        const totals = await db.query(
             `SELECT 
                 coalesce(SUM(total), 0)::numeric as gross_sales,
                 coalesce(SUM(cgst) + SUM(sgst), 0)::numeric as total_tax,
                 coalesce(COUNT(*), 0)::int as tx_count,
-                coalesce(SUM(subtotal) * 0.05, 0)::numeric as commission
+                coalesce(SUM(subtotal) * ${COMMISSION_RATE}, 0)::numeric as commission
              FROM transactions
              WHERE date >= CURRENT_DATE AND COALESCE(payment_status, 'paid') = 'paid'`
         );
-        res.json(result.rows[0]);
+
+        const byEmp = await db.query(
+            `SELECT 
+                t.employee_id as "employeeId",
+                coalesce(u.name, t.employee_name, 'Unknown') as name,
+                coalesce(SUM(t.subtotal), 0)::numeric as sales,
+                coalesce(SUM(t.subtotal) * ${COMMISSION_RATE}, 0)::numeric as commission,
+                COUNT(*)::int as tx_count
+             FROM transactions t
+             LEFT JOIN users u ON u.id = t.employee_id
+             WHERE t.date >= CURRENT_DATE AND COALESCE(t.payment_status, 'paid') = 'paid'
+             GROUP BY t.employee_id, coalesce(u.name, t.employee_name, 'Unknown')
+             ORDER BY sales DESC`
+        );
+
+        res.json({
+            ...totals.rows[0],
+            byEmployee: byEmp.rows
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to calculate financial summary' });
+    }
+});
+
+// --- SHIFTS ---
+router.post('/shifts/clock-in', authenticateToken, async (req, res) => {
+    try {
+        const open = await db.query(
+            'SELECT id FROM shift_logs WHERE user_id = $1 AND clock_out IS NULL LIMIT 1',
+            [req.user.id]
+        );
+        if (open.rows.length) {
+            return res.status(400).json({ error: 'Already clocked in', shiftId: open.rows[0].id });
+        }
+        const result = await db.query(
+            'INSERT INTO shift_logs (user_id, notes) VALUES ($1, $2) RETURNING *',
+            [req.user.id, req.body.notes || null]
+        );
+        res.status(201).json({ message: 'Clocked in', shift: result.rows[0] });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Clock-in failed' });
+    }
+});
+
+router.post('/shifts/clock-out', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query(
+            `UPDATE shift_logs SET clock_out = NOW()
+             WHERE user_id = $1 AND clock_out IS NULL
+             RETURNING *`,
+            [req.user.id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: 'No open shift to clock out' });
+        }
+        res.json({ message: 'Clocked out', shift: result.rows[0] });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Clock-out failed' });
+    }
+});
+
+router.get('/shifts/me', authenticateToken, async (req, res) => {
+    try {
+        const open = await db.query(
+            'SELECT * FROM shift_logs WHERE user_id = $1 AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1',
+            [req.user.id]
+        );
+        const today = await db.query(
+            `SELECT * FROM shift_logs
+             WHERE user_id = $1 AND clock_in >= CURRENT_DATE
+             ORDER BY clock_in DESC`,
+            [req.user.id]
+        );
+        const hoursRes = await db.query(
+            `SELECT coalesce(SUM(
+                EXTRACT(EPOCH FROM (coalesce(clock_out, NOW()) - clock_in)) / 3600.0
+             ), 0)::numeric as hours_today
+             FROM shift_logs
+             WHERE user_id = $1 AND clock_in >= CURRENT_DATE`,
+            [req.user.id]
+        );
+        res.json({
+            openShift: open.rows[0] || null,
+            todayShifts: today.rows,
+            hoursToday: Number(hoursRes.rows[0].hours_today)
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to load shifts' });
     }
 });
 
