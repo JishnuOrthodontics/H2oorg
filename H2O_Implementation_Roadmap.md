@@ -12,10 +12,10 @@ Status legend: ✅ Done · 🟡 Partial/simulated · ⬜ Not started
 ## Phase 0 — Make it production-safe (before anyone takes real money)
 Goal: the demo becomes a real, deployable system without changing its feature set.
 
-- 🟡 Point Cloudflare frontend at a hosted Express API using **Supabase Postgres**.
-  - **Code ready:** `frontend/config.js`, SSL-aware `backend/config/db.js`, Phase 0 security hardening.
-  - **Done:** Supabase project **`h2o-pos`** (`psavsjxqrcvximffbivu`, Mumbai). `backend/.env` uses Session pooler (IPv4). Schema + seed + encrypted PII loaded.
-  - **Still needed:** host Express API (free) with same env vars; point `frontend/config.js` at that API URL; push so Cloudflare picks it up.
+- ✅ Point Cloudflare frontend at hosted Express API using **Supabase Postgres**.
+  - Supabase **`h2o-pos`** (`psavsjxqrcvximffbivu`, Mumbai) via Session pooler; schema + seed + encrypted PII loaded.
+  - Render free **`h2o-pos-api`** (`render.yaml`); `frontend/config.js` → `https://h2o-pos-api.onrender.com/api`.
+  - `GET /health` → `database: connected` (verified 2026-11-21).
 - ✅ Remove hardcoded JWT fallback secret; require `JWT_SECRET` from env.
 - ✅ Lock down CORS to Cloudflare origins via `FRONTEND_ORIGIN`.
 - ✅ Fix path handling in `frontend/server.js` (path-traversal guard).
@@ -23,15 +23,15 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 - ✅ `.env.example` + `.env` gitignored.
 
 **Exit criteria:** backend reachable over HTTPS from a real domain, no secrets in source, customer PII encrypted at rest.
-**Status:** security code done; Supabase project + API host wiring in progress.
+**Status:** ✅ Complete (Cloudflare + Supabase + Render).
 
 ### Phase 0 finish checklist (Cloudflare + Supabase)
-1. Create Supabase project → copy Database URI into `backend/.env` as `DATABASE_URL`.
-2. Set `JWT_SECRET`, `PII_ENCRYPTION_KEY`, `FRONTEND_ORIGIN=https://h2oorg.com,https://www.h2oorg.com`.
-3. Run `npm run db:seed` against Supabase (or `db:migrate-pii` if data already exists).
-4. Host Express API somewhere free (e.g. Render free / Fly free) with the same env vars — Supabase is the DB, not the Node host.
-5. Set `frontend/config.js` → `https://<api-host>/api` and push so Cloudflare redeploys.
-6. Confirm `GET https://<api-host>/health` → `database: connected` from the live site.
+1. ✅ Create Supabase project → copy Database URI into `backend/.env` as `DATABASE_URL`.
+2. ✅ Set `JWT_SECRET`, `PII_ENCRYPTION_KEY`, `FRONTEND_ORIGIN=https://h2oorg.com,https://www.h2oorg.com`.
+3. ✅ Run `npm run db:seed` against Supabase (or `db:migrate-pii` if data already exists).
+4. ✅ Host Express API on Render free with the same env vars — Supabase is the DB, not the Node host.
+5. ✅ Set `frontend/config.js` → `https://h2o-pos-api.onrender.com/api` and push so Cloudflare redeploys.
+6. ✅ Confirm `GET https://h2o-pos-api.onrender.com/health` → `database: connected`.
 
 ---
 
@@ -83,7 +83,7 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 
 ## Open decisions needed from the owner
 1. Which payment gateway to commit to for real cards + UPI (Razorpay/PayU/Cashfree) — affects Phase 1 scope and cost.
-2. ~~Hosting choice for Phase 0~~ → **Settled: Cloudflare frontend + GCP backend (GitHub deploy).** Remaining: share the live GCP API base URL so `config.js` / CORS can be finalized.
+2. ~~Hosting choice for Phase 0~~ → **Settled: Cloudflare frontend + Supabase Postgres + Render Express (`h2o-pos-api.onrender.com`).**
 3. Whether WhatsApp Business API (paid, needs Meta approval) or a cheaper SMS gateway is preferred for Phase 3 gifting automation.
 
 ---
