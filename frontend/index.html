@@ -371,14 +371,20 @@
                                 <!-- Customer Profiling Panel -->
                                 <div class="pos-customer-select">
                                     <label style="font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 0.4rem; font-weight: 600;">ASSIGN CUSTOMER (CRM)</label>
-                                    <select class="pos-input" id="pos-customer-select-dropdown" style="padding: 0.5rem; font-size: 0.8rem;">
+                                    <select class="pos-input" id="pos-customer-select-dropdown" style="padding: 0.5rem; font-size: 0.8rem;" onchange="onPosCustomerChange()">
                                         <option value="walkin">Walk-in Customer (No Profile)</option>
                                         <option value="c1">Anjali Menon (+91 98765 43210)</option>
                                         <option value="c2">Rahul Krishnan (+91 94470 11223)</option>
                                         <option value="c3">Dr. Jishnu Sen (+91 99612 88776)</option>
                                     </select>
-                                    <!-- Scent Profile Tooltip Container -->
                                     <div id="pos-selected-customer-profile" style="margin-top: 0.5rem; display: none;"></div>
+                                    <div id="pos-loyalty-redeem" style="margin-top: 0.6rem; display: none;">
+                                        <label style="font-size: 0.7rem; color: var(--text-secondary); font-weight: 600;">REDEEM LOYALTY (100 pts = ₹100)</label>
+                                        <div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.25rem;">
+                                            <input type="number" id="pos-redeem-points" class="pos-input" min="0" step="100" value="0" style="padding:0.4rem; font-size:0.75rem; flex:1;" oninput="updateRedeemHint()">
+                                            <span id="pos-redeem-hint" style="font-size:0.65rem; color:var(--text-muted); white-space:nowrap;"></span>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- Summary & Tax Split -->
@@ -476,13 +482,36 @@
                                         <th>Customer Name</th>
                                         <th>Contact (Masked)</th>
                                         <th>Preferred Notes</th>
-                                        <th>Remarks / Sensitivities</th>
+                                        <th>Tier</th>
                                         <th>Loyalty Balance</th>
                                         <th>Marketing</th>
                                     </tr>
                                 </thead>
                                 <tbody id="pos-crm-table-body">
                                     <!-- Dynamic rows loaded by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1.5rem; margin-top:1.5rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
+                                <h4 style="font-size:1.2rem;">Upcoming Occasions (7 days)</h4>
+                                <button class="btn btn-gold" style="font-size: 0.8rem; padding: 0.5rem 1.2rem;" onclick="runBirthdayOffers()">
+                                    <i class="fas fa-sms" style="margin-right: 0.5rem;"></i> Queue Birthday/Anniversary SMS
+                                </button>
+                            </div>
+                            <table class="pos-table">
+                                <thead>
+                                    <tr>
+                                        <th>Customer</th>
+                                        <th>Occasion</th>
+                                        <th>Birthday</th>
+                                        <th>Anniversary</th>
+                                        <th>Tier</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pos-crm-occasions-body">
+                                    <tr><td colspan="5" style="color:var(--text-muted);">Loading…</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -512,6 +541,61 @@
                                 <div class="kpi-value" id="rep-commission">₹0</div>
                                 <div class="kpi-change positive">5% of subtotal by staff</div>
                             </div>
+                        </div>
+
+                        <!-- Top performers -->
+                        <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1.5rem; margin-bottom:1.5rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
+                                <h4 style="font-size:1.2rem;">Top Performers</h4>
+                                <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+                                    <select id="rep-top-group" class="pos-input" style="padding:0.35rem 0.6rem; font-size:0.75rem; width:auto;" onchange="loadTopPerformers()">
+                                        <option value="brand">By Brand</option>
+                                        <option value="family">By Family</option>
+                                        <option value="note">By Note</option>
+                                    </select>
+                                    <input type="number" id="rep-top-days" class="pos-input" value="30" min="1" style="width:4.5rem; padding:0.35rem; font-size:0.75rem;" title="Days">
+                                    <button class="btn btn-outline" style="font-size:0.7rem; padding:0.35rem 0.75rem;" onclick="loadTopPerformers()">Refresh</button>
+                                </div>
+                            </div>
+                            <table class="pos-table">
+                                <thead>
+                                    <tr>
+                                        <th>Label</th>
+                                        <th>Revenue</th>
+                                        <th>Units</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pos-reports-top-body">
+                                    <tr><td colspan="3" style="color:var(--text-muted);">Open Reports tab to load.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Dead stock -->
+                        <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1.5rem; margin-bottom:1.5rem;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
+                                <h4 style="font-size:1.2rem;">Dead Stock</h4>
+                                <div style="display:flex; gap:0.5rem; align-items:center;">
+                                    <label style="font-size:0.7rem; color:var(--text-muted);">No sales in</label>
+                                    <input type="number" id="rep-dead-days" class="pos-input" value="30" min="1" style="width:4.5rem; padding:0.35rem; font-size:0.75rem;">
+                                    <span style="font-size:0.7rem; color:var(--text-muted);">days</span>
+                                    <button class="btn btn-outline" style="font-size:0.7rem; padding:0.35rem 0.75rem;" onclick="loadDeadStock()">Refresh</button>
+                                </div>
+                            </div>
+                            <table class="pos-table">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>SKU</th>
+                                        <th>Qty</th>
+                                        <th>Batch age (days)</th>
+                                        <th>Last sale</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pos-reports-dead-body">
+                                    <tr><td colspan="5" style="color:var(--text-muted);">Open Reports tab to load.</td></tr>
+                                </tbody>
+                            </table>
                         </div>
 
                         <!-- Per-employee commission -->
@@ -671,6 +755,17 @@
                     <input type="email" id="cust-new-email" class="pos-input" placeholder="e.g., customer@email.com">
                 </div>
 
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 0.4rem; font-weight: 600;">BIRTHDAY</label>
+                        <input type="date" id="cust-new-birthday" class="pos-input">
+                    </div>
+                    <div>
+                        <label style="font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 0.4rem; font-weight: 600;">ANNIVERSARY</label>
+                        <input type="date" id="cust-new-anniversary" class="pos-input">
+                    </div>
+                </div>
+
                 <!-- Scent Profile -->
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                     <div>
@@ -683,7 +778,7 @@
                     </div>
                     <div>
                         <label style="font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 0.4rem; font-weight: 600;">LOYALTY START</label>
-                        <input type="text" class="pos-input" value="0 Points" disabled style="opacity: 0.6;">
+                        <input type="text" class="pos-input" value="Silver · 0 pts" disabled style="opacity: 0.6;">
                     </div>
                 </div>
 

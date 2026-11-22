@@ -58,12 +58,13 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 ---
 
 ## Phase 3 — Reporting & CRM depth (REQ-03, REQ-04)
-- ⬜ "Top performers" report: revenue by brand / fragrance family / note.
-- ⬜ Dead-stock report: variants with no sales in N days, by batch age.
-- ⬜ Birthday/anniversary field on customer profile + scheduled WhatsApp/SMS trigger (real integration, not an `alert()`).
-- ⬜ Loyalty tiers (e.g. Silver/Gold/Platinum bands) with redemption flow, replacing flat point accrual with no spend path.
+- ✅ Top performers: `GET /reports/top-performers?groupBy=brand|family|note` (+ Reports UI).
+- ✅ Dead stock: `GET /reports/dead-stock?days=N` (qty & batch age; Reports UI).
+- ✅ Birthday/anniversary on customers; `GET /crm/upcoming-occasions`; Twilio SMS outbox + `POST /crm/birthday-offers/run` (no fake `alert()` success).
+- ✅ Loyalty tiers Silver/Gold/Platinum; redeem 100 pts = ₹100 at checkout; void restores redemptions.
 
 **Exit criteria:** owner can answer "what's our dead stock?" and "which customers are due a birthday offer?" from the dashboard.
+**Status:** ✅ Complete (Twilio optional — without keys, SMS rows are `logged` in `message_outbox`).
 
 ---
 
@@ -86,7 +87,7 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 ## Open decisions needed from the owner
 1. ~~Payment gateway~~ → **Settled: Razorpay** (Test keys first; switch to Live when ready).
 2. ~~Hosting choice for Phase 0~~ → **Settled: Cloudflare frontend + Supabase Postgres + Render Express (`h2o-pos-api.onrender.com`).**
-3. Whether WhatsApp Business API (paid, needs Meta approval) or a cheaper SMS gateway is preferred for Phase 3 gifting automation.
+3. ~~Gifting channel~~ → **Settled: Twilio SMS** via `message_outbox` (WhatsApp can reuse the same outbox later).
 
 ---
-*Last updated: 2026-11-21. Update this file as phases are started/completed rather than creating a new plan doc.*
+*Last updated: 2026-11-22. Update this file as phases are started/completed rather than creating a new plan doc.*

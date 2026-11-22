@@ -7,7 +7,9 @@ const webhooksRouter = require('./routes/webhooks');
 const db = require('./config/db');
 const { migratePayments } = require('./scripts/migrate-payments');
 const { migratePhase2 } = require('./scripts/migrate-phase2');
+const { migratePhase3 } = require('./scripts/migrate-phase3');
 const { isConfigured } = require('./config/razorpay');
+const { isTwilioConfigured } = require('./services/messaging');
 
 validateEnv();
 
@@ -24,7 +26,7 @@ app.use(cors({
         return callback(null, false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Cron-Secret']
 }));
 
 // Razorpay webhooks need the raw body for HMAC verification
@@ -44,7 +46,8 @@ app.get('/health', async (req, res) => {
             services: {
                 api: 'healthy',
                 database: 'connected',
-                razorpay: isConfigured() ? 'configured' : 'not_configured'
+                razorpay: isConfigured() ? 'configured' : 'not_configured',
+                twilio: isTwilioConfigured() ? 'configured' : 'not_configured'
             }
         });
     } catch (err) {
@@ -66,11 +69,13 @@ app.get('/', (req, res) => {
 
 Promise.all([
     migratePayments().catch((err) => console.error('Payment migration on boot failed:', err.message)),
-    migratePhase2().catch((err) => console.error('Phase 2 migration on boot failed:', err.message))
+    migratePhase2().catch((err) => console.error('Phase 2 migration on boot failed:', err.message)),
+    migratePhase3().catch((err) => console.error('Phase 3 migration on boot failed:', err.message))
 ]).finally(() => {
     app.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on port ${PORT}`);
         console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
         console.log(`💳 Razorpay: ${isConfigured() ? 'configured' : 'not configured (set RAZORPAY_* env)'}`);
+        console.log(`📱 Twilio SMS: ${isTwilioConfigured() ? 'configured' : 'not configured (messages logged to outbox)'}`);
     });
 });

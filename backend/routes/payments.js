@@ -39,7 +39,8 @@ router.post('/create-order', authenticateToken, async (req, res) => {
         total,
         cashAmount = 0,
         digitalAmount,
-        items
+        items,
+        redeemPoints = 0
     } = req.body;
 
     if (!invoiceNo || !customerName || !items || !items.length) {
@@ -78,7 +79,8 @@ router.post('/create-order', authenticateToken, async (req, res) => {
         total: saleTotal,
         paymentMethod,
         splits,
-        items
+        items,
+        redeemPoints: redeemPoints || 0
     };
 
     try {

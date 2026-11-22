@@ -2,26 +2,11 @@
  * Shared sale finalization used by cash POST /transactions and Razorpay verify/webhook.
  */
 const db = require('../config/db');
+const { validateRedemption } = require('./loyalty');
 
 /**
  * @param {object} sale
- * @param {string} sale.invoiceNo
- * @param {string} [sale.customerId]
- * @param {string} sale.customerName
- * @param {string} sale.employeeName
- * @param {number} [sale.employeeId]
- * @param {number} sale.subtotal
- * @param {number} sale.cgst
- * @param {number} sale.sgst
- * @param {number} sale.total
- * @param {string} sale.paymentMethod
- * @param {string} [sale.referenceId]
- * @param {string} [sale.paymentStatus]
- * @param {string} [sale.razorpayOrderId]
- * @param {string} [sale.razorpayPaymentId]
- * @param {Array<{method:string,amount:number,referenceId?:string}>} [sale.splits]
- * @param {Array<{variantId:string,name:string,qty:number,price:number}>} sale.items
- * @param {import('pg').PoolClient} [externalClient] — if provided, caller owns BEGIN/COMMIT
+ * @param {number} [sale.redeemPoints]
  */
 async function finalizeSale(sale, externalClient = null) {
     const ownTx = !externalClient;
@@ -31,6 +16,36 @@ async function finalizeSale(sale, externalClient = null) {
         if (ownTx) await client.query('BEGIN');
 
         const transactionId = 'tx_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+        const customerId = sale.customerId && sale.customerId !== 'walkin' ? sale.customerId : null;
+        let redeemPoints = 0;
+        let discountInr = 0;
+
+        if (customerId && sale.redeemPoints) {
+            const cust = await client.query(
+                'SELECT loyalty_points FROM customers WHERE id = $1 FOR UPDATE',
+                [customerId]
+            );
+            if (cust.rows.length === 0) {
+                const err = new Error('Customer not found for loyalty redemption');
+                err.status = 400;
+                throw err;
+            }
+            // Gross before redeem ≈ total + discount; validate against total+redeem as ceiling
+            const grossHint = Number(sale.total) + Number(sale.redeemPoints || 0);
+            const validated = validateRedemption(
+                cust.rows[0].loyalty_points,
+                sale.redeemPoints,
+                grossHint
+            );
+            redeemPoints = validated.redeemPoints;
+            discountInr = validated.discountInr;
+            if (redeemPoints > 0) {
+                await client.query(
+                    'UPDATE customers SET loyalty_points = loyalty_points - $1 WHERE id = $2',
+                    [redeemPoints, customerId]
+                );
+            }
+        }
 
         await client.query(
             `INSERT INTO transactions (
@@ -51,7 +66,7 @@ async function finalizeSale(sale, externalClient = null) {
                 sale.paymentStatus || 'paid',
                 sale.razorpayOrderId || null,
                 sale.razorpayPaymentId || null,
-                sale.customerId && sale.customerId !== 'walkin' ? sale.customerId : null,
+                customerId,
                 sale.employeeId || null
             ]
         );
@@ -79,12 +94,23 @@ async function finalizeSale(sale, externalClient = null) {
             );
         }
 
-        if (sale.customerId && sale.customerId !== 'walkin') {
-            const loyaltyEarned = Math.floor(Number(sale.total) / 10);
+        if (customerId && redeemPoints > 0) {
             await client.query(
-                'UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE id = $2',
-                [loyaltyEarned, sale.customerId]
+                `INSERT INTO loyalty_redemptions (customer_id, transaction_id, points, amount_inr)
+                 VALUES ($1, $2, $3, $4)`,
+                [customerId, transactionId, redeemPoints, discountInr]
             );
+        }
+
+        if (customerId) {
+            // Accrue on net total after redemption
+            const loyaltyEarned = Math.floor(Number(sale.total) / 10);
+            if (loyaltyEarned > 0) {
+                await client.query(
+                    'UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE id = $2',
+                    [loyaltyEarned, customerId]
+                );
+            }
         }
 
         if (Array.isArray(sale.splits)) {
@@ -97,7 +123,7 @@ async function finalizeSale(sale, externalClient = null) {
         }
 
         if (ownTx) await client.query('COMMIT');
-        return { transactionId };
+        return { transactionId, redeemPoints, discountInr };
     } catch (err) {
         if (ownTx) await client.query('ROLLBACK');
         throw err;
@@ -106,9 +132,6 @@ async function finalizeSale(sale, externalClient = null) {
     }
 }
 
-/**
- * Finalize a pending payment_orders row after Razorpay capture (idempotent).
- */
 async function finalizePaidOrder(razorpayOrderId, razorpayPaymentId) {
     const client = await db.pool.connect();
     try {

@@ -63,11 +63,25 @@ async function voidSale(transactionId, { voidedBy, reason }) {
         }
 
         if (tx.customer_id) {
+            // Reverse accrual on net total
             const loyaltyEarned = Math.floor(Number(tx.total) / 10);
-            await client.query(
-                'UPDATE customers SET loyalty_points = GREATEST(0, loyalty_points - $1) WHERE id = $2',
-                [loyaltyEarned, tx.customer_id]
+            if (loyaltyEarned > 0) {
+                await client.query(
+                    'UPDATE customers SET loyalty_points = GREATEST(0, loyalty_points - $1) WHERE id = $2',
+                    [loyaltyEarned, tx.customer_id]
+                );
+            }
+            // Restore redeemed points
+            const redemptions = await client.query(
+                'SELECT points FROM loyalty_redemptions WHERE transaction_id = $1',
+                [transactionId]
             );
+            for (const row of redemptions.rows) {
+                await client.query(
+                    'UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE id = $2',
+                    [row.points, tx.customer_id]
+                );
+            }
         }
 
         await client.query(

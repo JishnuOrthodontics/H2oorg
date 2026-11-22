@@ -5,6 +5,8 @@ const db = require('../config/db');
 const { encrypt, decrypt } = require('../config/crypto');
 const { finalizeSale } = require('../services/sales');
 const { voidSale } = require('../services/voidSale');
+const { loyaltyTier } = require('../services/loyalty');
+const { enqueueSms, processOutbox, isTwilioConfigured } = require('../services/messaging');
 const {
     authenticateToken,
     isManagerRole,
@@ -15,6 +17,47 @@ const {
 } = require('../middleware/auth');
 
 const COMMISSION_RATE = 0.05;
+
+function formatCustomer(r) {
+    let phone = r.phone;
+    let email = r.email;
+    try {
+        phone = decrypt(r.phone);
+        email = r.email ? decrypt(r.email) : null;
+    } catch (decErr) {
+        console.error(`Failed to decrypt PII for customer ${r.id}:`, decErr.message);
+    }
+    return {
+        id: r.id,
+        name: r.name,
+        phone,
+        email: email || 'N/A',
+        loyaltyPoints: r.loyalty_points,
+        loyaltyTier: loyaltyTier(r.loyalty_points),
+        birthday: r.birthday,
+        anniversary: r.anniversary,
+        scentProfile: {
+            preferred: r.preferred_notes || [],
+            disliked: r.disliked_notes || [],
+            skinType: r.skin_type,
+            remarks: r.remarks || 'No specific sensitivities.'
+        }
+    };
+}
+
+function occasionWithinDays(dateVal, days) {
+    if (!dateVal) return false;
+    const d = new Date(dateVal);
+    const now = new Date();
+    for (let i = 0; i <= days; i++) {
+        const check = new Date(now);
+        check.setDate(now.getDate() + i);
+        if (d.getUTCMonth() === check.getMonth() && d.getUTCDate() === check.getDate()) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // --- STAFF LOGIN ---
 router.post('/auth/login', async (req, res) => {
@@ -257,30 +300,7 @@ router.post('/overrides/price', authenticateToken, async (req, res) => {
 router.get('/customers', async (req, res) => {
     try {
         const result = await db.query('SELECT * FROM customers ORDER BY name ASC');
-        const formatted = result.rows.map(r => {
-            let phone = r.phone;
-            let email = r.email;
-            try {
-                phone = decrypt(r.phone);
-                email = r.email ? decrypt(r.email) : null;
-            } catch (decErr) {
-                console.error(`Failed to decrypt PII for customer ${r.id}:`, decErr.message);
-            }
-            return {
-                id: r.id,
-                name: r.name,
-                phone,
-                email: email || 'N/A',
-                loyaltyPoints: r.loyalty_points,
-                scentProfile: {
-                    preferred: r.preferred_notes || [],
-                    disliked: r.disliked_notes || [],
-                    skinType: r.skin_type,
-                    remarks: r.remarks || 'No specific sensitivities.'
-                }
-            };
-        });
-        res.json(formatted);
+        res.json(result.rows.map(formatCustomer));
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to fetch customers' });
@@ -289,7 +309,7 @@ router.get('/customers', async (req, res) => {
 
 // --- CRM: REGISTER NEW CUSTOMER ---
 router.post('/customers', async (req, res) => {
-    const { name, phone, email, preferred, disliked, skinType, remarks } = req.body;
+    const { name, phone, email, preferred, disliked, skinType, remarks, birthday, anniversary } = req.body;
 
     if (!name || !phone) {
         return res.status(400).json({ error: 'Name and Phone are required' });
@@ -298,8 +318,8 @@ router.post('/customers', async (req, res) => {
     try {
         const id = 'c_' + Date.now();
         await db.query(
-            `INSERT INTO customers (id, name, phone, email, loyalty_points, skin_type, preferred_notes, disliked_notes, remarks) 
-             VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8)`,
+            `INSERT INTO customers (id, name, phone, email, loyalty_points, skin_type, preferred_notes, disliked_notes, remarks, birthday, anniversary) 
+             VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $8, $9, $10)`,
             [
                 id,
                 name,
@@ -308,7 +328,9 @@ router.post('/customers', async (req, res) => {
                 skinType || 'Normal',
                 preferred || [],
                 disliked || [],
-                remarks || ''
+                remarks || '',
+                birthday || null,
+                anniversary || null
             ]
         );
         res.status(201).json({ message: 'Customer registered successfully', id });
@@ -318,11 +340,53 @@ router.post('/customers', async (req, res) => {
     }
 });
 
+// --- CRM: UPDATE CUSTOMER (birthday / anniversary / profile) ---
+router.patch('/customers/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { name, phone, email, preferred, disliked, skinType, remarks, birthday, anniversary } = req.body;
+    try {
+        const existing = await db.query('SELECT * FROM customers WHERE id = $1', [id]);
+        if (!existing.rows.length) return res.status(404).json({ error: 'Customer not found' });
+        const cur = existing.rows[0];
+        await db.query(
+            `UPDATE customers SET
+                name = coalesce($1, name),
+                phone = coalesce($2, phone),
+                email = coalesce($3, email),
+                skin_type = coalesce($4, skin_type),
+                preferred_notes = coalesce($5, preferred_notes),
+                disliked_notes = coalesce($6, disliked_notes),
+                remarks = coalesce($7, remarks),
+                birthday = coalesce($8, birthday),
+                anniversary = coalesce($9, anniversary)
+             WHERE id = $10`,
+            [
+                name || null,
+                phone ? encrypt(phone) : null,
+                email ? encrypt(email) : null,
+                skinType || null,
+                preferred || null,
+                disliked || null,
+                remarks != null ? remarks : null,
+                birthday !== undefined ? birthday || null : null,
+                anniversary !== undefined ? anniversary || null : null,
+                id
+            ]
+        );
+        // If birthday explicitly null-ish via empty string handled above; reload
+        const updated = await db.query('SELECT * FROM customers WHERE id = $1', [id]);
+        res.json(formatCustomer(updated.rows[0]));
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to update customer' });
+    }
+});
+
 // --- POS: PROCESS TRANSACTIONS (CASH / NON-GATEWAY) ---
 router.post('/transactions', authenticateToken, async (req, res) => {
     const {
         invoiceNo, customerId, customerName, employeeName, subtotal, cgst, sgst, total,
-        paymentMethod, referenceId, items, splits
+        paymentMethod, referenceId, items, splits, redeemPoints
     } = req.body;
 
     if (!invoiceNo || !customerName || !items || items.length === 0) {
@@ -360,13 +424,14 @@ router.post('/transactions', authenticateToken, async (req, res) => {
             referenceId: referenceId || '',
             paymentStatus: 'paid',
             splits: saleSplits,
-            items
+            items,
+            redeemPoints: redeemPoints || 0
         });
 
         res.status(201).json({ message: 'Transaction processed successfully', transactionId });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Transaction failed' });
+        res.status(err.status || 500).json({ error: err.message || 'Transaction failed' });
     }
 });
 
@@ -449,6 +514,217 @@ router.get('/reports/summary', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to calculate financial summary' });
+    }
+});
+
+// --- REPORTS: TOP PERFORMERS (brand / family / note) ---
+router.get('/reports/top-performers', authenticateToken, async (req, res) => {
+    const days = Math.max(1, parseInt(req.query.days, 10) || 30);
+    const groupBy = String(req.query.groupBy || 'brand').toLowerCase();
+    try {
+        let sql;
+        if (groupBy === 'note') {
+            sql = `
+                SELECT note AS label,
+                       coalesce(SUM(ti.qty * ti.price), 0)::numeric AS revenue,
+                       coalesce(SUM(ti.qty), 0)::int AS units
+                FROM transaction_items ti
+                JOIN transactions t ON t.id = ti.transaction_id
+                JOIN variants v ON v.id = ti.variant_id
+                JOIN perfumes p ON p.id = v.perfume_id
+                CROSS JOIN LATERAL unnest(coalesce(p.notes, ARRAY[]::text[])) AS note
+                WHERE COALESCE(t.payment_status, 'paid') = 'paid'
+                  AND t.date >= CURRENT_DATE - ($1::int || ' days')::interval
+                GROUP BY note
+                ORDER BY revenue DESC
+                LIMIT 25`;
+        } else if (groupBy === 'family') {
+            sql = `
+                SELECT p.family AS label,
+                       coalesce(SUM(ti.qty * ti.price), 0)::numeric AS revenue,
+                       coalesce(SUM(ti.qty), 0)::int AS units
+                FROM transaction_items ti
+                JOIN transactions t ON t.id = ti.transaction_id
+                JOIN variants v ON v.id = ti.variant_id
+                JOIN perfumes p ON p.id = v.perfume_id
+                WHERE COALESCE(t.payment_status, 'paid') = 'paid'
+                  AND t.date >= CURRENT_DATE - ($1::int || ' days')::interval
+                GROUP BY p.family
+                ORDER BY revenue DESC
+                LIMIT 25`;
+        } else {
+            sql = `
+                SELECT p.brand AS label,
+                       coalesce(SUM(ti.qty * ti.price), 0)::numeric AS revenue,
+                       coalesce(SUM(ti.qty), 0)::int AS units
+                FROM transaction_items ti
+                JOIN transactions t ON t.id = ti.transaction_id
+                JOIN variants v ON v.id = ti.variant_id
+                JOIN perfumes p ON p.id = v.perfume_id
+                WHERE COALESCE(t.payment_status, 'paid') = 'paid'
+                  AND t.date >= CURRENT_DATE - ($1::int || ' days')::interval
+                GROUP BY p.brand
+                ORDER BY revenue DESC
+                LIMIT 25`;
+        }
+        const result = await db.query(sql, [days]);
+        res.json({ days, groupBy, rows: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to load top performers' });
+    }
+});
+
+// --- REPORTS: DEAD STOCK ---
+router.get('/reports/dead-stock', authenticateToken, async (req, res) => {
+    const days = Math.max(1, parseInt(req.query.days, 10) || 30);
+    try {
+        const result = await db.query(
+            `SELECT
+                v.id AS "variantId",
+                p.name AS perfume,
+                p.brand,
+                v.size,
+                v.sku,
+                v.barcode,
+                coalesce(SUM(b.qty_current), 0)::int AS qty,
+                MIN(b.mfg_date) AS oldest_mfg,
+                MIN(b.exp_date) AS nearest_exp,
+                (CURRENT_DATE - MIN(b.mfg_date))::int AS batch_age_days,
+                MAX(ls.last_sale) AS last_sale
+             FROM variants v
+             JOIN perfumes p ON p.id = v.perfume_id
+             JOIN batches b ON b.variant_id = v.id
+             LEFT JOIN LATERAL (
+                SELECT MAX(t.date) AS last_sale
+                FROM transaction_items ti
+                JOIN transactions t ON t.id = ti.transaction_id
+                WHERE ti.variant_id = v.id
+                  AND COALESCE(t.payment_status, 'paid') = 'paid'
+             ) ls ON true
+             GROUP BY v.id, p.name, p.brand, v.size, v.sku, v.barcode
+             HAVING coalesce(SUM(b.qty_current), 0) > 0
+                AND (
+                    MAX(ls.last_sale) IS NULL
+                    OR MAX(ls.last_sale) < CURRENT_DATE - ($1::int || ' days')::interval
+                )
+             ORDER BY batch_age_days DESC NULLS LAST, qty DESC`,
+            [days]
+        );
+        res.json({ days, rows: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to load dead stock' });
+    }
+});
+
+// --- CRM: UPCOMING BIRTHDAYS / ANNIVERSARIES ---
+router.get('/crm/upcoming-occasions', authenticateToken, async (req, res) => {
+    const days = Math.max(1, parseInt(req.query.days, 10) || 7);
+    try {
+        const result = await db.query('SELECT * FROM customers ORDER BY name ASC');
+        const rows = [];
+        for (const r of result.rows) {
+            const formatted = formatCustomer(r);
+            const occasions = [];
+            if (occasionWithinDays(r.birthday, days)) occasions.push('birthday');
+            if (occasionWithinDays(r.anniversary, days)) occasions.push('anniversary');
+            if (occasions.length) {
+                rows.push({ ...formatted, occasions });
+            }
+        }
+        res.json({ days, rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to load upcoming occasions' });
+    }
+});
+
+// --- CRM: QUEUE / RUN BIRTHDAY OFFERS ---
+router.post('/crm/birthday-offers/run', async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET;
+    const headerSecret = req.headers['x-cron-secret'];
+    const cronOk = Boolean(cronSecret && headerSecret && headerSecret === cronSecret);
+
+    if (!cronOk) {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Unauthorized: Manager JWT or X-Cron-Secret required' });
+        }
+        try {
+            const user = jwt.verify(token, JWT_SECRET);
+            if (!isManagerRole(user.role)) {
+                return res.status(403).json({ error: 'Manager role or CRON_SECRET required' });
+            }
+            req.user = user;
+        } catch (_) {
+            return res.status(403).json({ error: 'Forbidden: Invalid token' });
+        }
+    }
+
+    const days = Math.max(1, parseInt((req.body && req.body.days) || req.query.days, 10) || 7);
+    try {
+        const result = await db.query('SELECT * FROM customers ORDER BY name ASC');
+        const queued = [];
+        for (const r of result.rows) {
+            const occasions = [];
+            if (occasionWithinDays(r.birthday, days)) occasions.push('birthday');
+            if (occasionWithinDays(r.anniversary, days)) occasions.push('anniversary');
+            if (!occasions.length) continue;
+            const customer = formatCustomer(r);
+            const label = occasions.join(' & ');
+            const body = `Hi ${customer.name}, H2O Perfumes wishes you a happy ${label}! Enjoy 10% off in-store this week with code GIFT10.`;
+            const msg = await enqueueSms({
+                toPhone: customer.phone,
+                body,
+                template: 'occasion_offer',
+                customerId: customer.id
+            });
+            queued.push({ customerId: customer.id, name: customer.name, occasions, messageId: msg.id, status: msg.status });
+        }
+        await processOutbox(50);
+        res.json({
+            days,
+            twilioConfigured: isTwilioConfigured(),
+            queued
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to run birthday offers' });
+    }
+});
+
+// Queue a single CRM offer SMS
+router.post('/crm/customers/:id/offer-sms', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
+        if (!result.rows.length) return res.status(404).json({ error: 'Customer not found' });
+        const customer = formatCustomer(result.rows[0]);
+        const body = (req.body && req.body.body) ||
+            `Hi ${customer.name}, a new batch matching your scent profile has arrived at H2O Kochi. Visit us for 10% off with code LOYALTY10.`;
+        const msg = await enqueueSms({
+            toPhone: customer.phone,
+            body,
+            template: 'crm_offer',
+            customerId: customer.id
+        });
+        res.status(201).json({ message: msg.status === 'sent' ? 'SMS sent' : (msg.status === 'logged' ? 'SMS logged (Twilio not configured)' : 'SMS queued'), outbox: msg });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to queue SMS' });
+    }
+});
+
+router.post('/messaging/process-outbox', authenticateToken, async (req, res) => {
+    if (!isManagerRole(req.user && req.user.role)) {
+        return res.status(403).json({ error: 'Manager only' });
+    }
+    try {
+        const result = await processOutbox(50);
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: 'Outbox processing failed' });
     }
 });
 

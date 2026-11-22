@@ -6,6 +6,8 @@ validateEnv();
 
 const schema = `
 -- Drop existing tables if they exist
+DROP TABLE IF EXISTS message_outbox CASCADE;
+DROP TABLE IF EXISTS loyalty_redemptions CASCADE;
 DROP TABLE IF EXISTS audit_overrides CASCADE;
 DROP TABLE IF EXISTS shift_logs CASCADE;
 DROP TABLE IF EXISTS payment_splits CASCADE;
@@ -37,7 +39,9 @@ CREATE TABLE customers (
     skin_type VARCHAR(50) DEFAULT 'Normal',
     preferred_notes TEXT[],
     disliked_notes TEXT[],
-    remarks TEXT
+    remarks TEXT,
+    birthday DATE,
+    anniversary DATE
 );
 
 -- 3. Perfumes Table
@@ -148,6 +152,32 @@ CREATE TABLE audit_overrides (
     detail JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 12. Loyalty redemptions
+CREATE TABLE loyalty_redemptions (
+    id SERIAL PRIMARY KEY,
+    customer_id VARCHAR(50) REFERENCES customers(id) ON DELETE SET NULL,
+    transaction_id VARCHAR(50) REFERENCES transactions(id) ON DELETE SET NULL,
+    points INT NOT NULL,
+    amount_inr NUMERIC(10, 2) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 13. Message outbox (Twilio SMS / future WhatsApp)
+CREATE TABLE message_outbox (
+    id SERIAL PRIMARY KEY,
+    channel VARCHAR(20) NOT NULL DEFAULT 'sms',
+    to_phone TEXT NOT NULL,
+    body TEXT NOT NULL,
+    template VARCHAR(50),
+    customer_id VARCHAR(50) REFERENCES customers(id) ON DELETE SET NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'queued',
+    provider_ref VARCHAR(100),
+    error TEXT,
+    scheduled_for TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
 `;
 
 const seedData = async () => {
@@ -169,24 +199,27 @@ const seedData = async () => {
       {
         id: 'c1', name: 'Anjali Menon', phone: '+91 98765 43210', email: 'anjali@example.com',
         points: 340, skin: 'Dry', preferred: ['Jasmine', 'Rose', 'Vanilla'], disliked: ['Oud'],
-        remarks: 'Allergic to heavy oriental profiles. Prefers soft, sweet florals.'
+        remarks: 'Allergic to heavy oriental profiles. Prefers soft, sweet florals.',
+        birthday: '1992-11-25', anniversary: '2018-03-12'
       },
       {
         id: 'c2', name: 'Rahul Krishnan', phone: '+91 94470 11223', email: 'rahul@example.com',
         points: 890, skin: 'Oily', preferred: ['Oud', 'Cardamom', 'Cedarwood'], disliked: ['Jasmine'],
-        remarks: 'Loves strong sillage and long-lasting spicy/woody scents.'
+        remarks: 'Loves strong sillage and long-lasting spicy/woody scents.',
+        birthday: '1988-06-14', anniversary: null
       },
       {
         id: 'c3', name: 'Dr. Jishnu Sen', phone: '+91 99612 88776', email: 'jishnu@example.com',
         points: 1200, skin: 'Normal', preferred: ['Bergamot', 'Neroli', 'Sandalwood'], disliked: ['Rose'],
-        remarks: 'Prefers fresh citrus for daytime/clinic, sandalwood for evenings.'
+        remarks: 'Prefers fresh citrus for daytime/clinic, sandalwood for evenings.',
+        birthday: '1985-11-22', anniversary: '2015-01-20'
       }
     ];
     for (const c of seedCustomers) {
       await client.query(
-        `INSERT INTO customers (id, name, phone, email, loyalty_points, skin_type, preferred_notes, disliked_notes, remarks)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [c.id, c.name, encrypt(c.phone), encrypt(c.email), c.points, c.skin, c.preferred, c.disliked, c.remarks]
+        `INSERT INTO customers (id, name, phone, email, loyalty_points, skin_type, preferred_notes, disliked_notes, remarks, birthday, anniversary)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [c.id, c.name, encrypt(c.phone), encrypt(c.email), c.points, c.skin, c.preferred, c.disliked, c.remarks, c.birthday, c.anniversary]
       );
     }
 

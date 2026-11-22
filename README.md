@@ -70,6 +70,8 @@ See `.env.example` / `backend/.env.example`.
 | `RAZORPAY_KEY_ID` | Razorpay Key Id (`rzp_test_…` or live) |
 | `RAZORPAY_KEY_SECRET` | Razorpay Key Secret |
 | `RAZORPAY_WEBHOOK_SECRET` | Webhook signing secret |
+| `TWILIO_ACCOUNT_SID` / `AUTH_TOKEN` / `FROM` | Optional SMS (else outbox `logged`) |
+| `CRON_SECRET` | Optional auth for birthday-offers cron |
 | `PORT` | API port (default `5000`) |
 
 Never commit `.env`. Production secrets live in the Render dashboard.
@@ -87,6 +89,13 @@ Never commit `.env`. Production secrets live in the Render dashboard.
 - Sales store `employee_id` from the JWT; Reports shows **Sales & commission by staff** (5% of paid subtotal).
 - Cashiers need a **Manager PIN** (seeded manager: `jishnu` / `9999`) to void sales, edit cart prices, restock, or add products. Managers skip the prompt.
 - POS topbar **Clock In / Clock Out** writes `shift_logs` (`GET /api/shifts/me`).
+
+### CRM & reports (Phase 3)
+
+- Reports: **Top performers** (brand/family/note) and **Dead stock** (N days).
+- CRM: birthday/anniversary; **Upcoming occasions**; Queue SMS / run birthday offers.
+- Loyalty: Silver (&lt;500) / Gold (500–1499) / Platinum (≥1500); redeem **100 pts = ₹100** at checkout.
+- Twilio: set `TWILIO_*` on Render. Cron: `POST /api/crm/birthday-offers/run` with header `X-Cron-Secret: $CRON_SECRET` (or Manager JWT).
 
 ## Production
 
@@ -106,7 +115,8 @@ Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the `
 | `npm run db:migrate-pii` | Encrypt existing plaintext customer PII |
 | `npm run db:migrate-payments` | Add payment columns / `payment_orders` / `payment_splits` |
 | `npm run db:migrate-phase2` | employee_id, void fields, `shift_logs`, `audit_overrides` |
+| `npm run db:migrate-phase3` | birthday/anniversary, `loyalty_redemptions`, `message_outbox` |
 
 ## Roadmap
 
-Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0–2** complete in code. Phase 1 still needs Razorpay Test keys on Render for live card/UPI.
+Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0–3** complete in code. Add Razorpay / Twilio keys on Render when ready for live payments and SMS.

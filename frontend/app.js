@@ -1042,6 +1042,7 @@ function renderPosCart() {
     sgstEl.textContent = `₹${totalSgst.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
     totalEl.textContent = `₹${finalTotal.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
     if (typeof updateSplitRemainder === "function") updateSplitRemainder();
+    if (typeof updateRedeemHint === "function") updateRedeemHint();
 }
 
 window.updatePosCartQty = function(variantId, change) {
@@ -1108,14 +1109,58 @@ function getCartTotals() {
     cart.forEach(i => { subtotal += i.price * i.qty; });
     const cgst = subtotal * 0.09;
     const sgst = subtotal * 0.09;
-    const total = Math.round((subtotal + cgst + sgst) * 100) / 100;
+    const gross = Math.round((subtotal + cgst + sgst) * 100) / 100;
+    const redeemPoints = getRedeemPointsInput();
+    const discount = Math.min(redeemPoints, Math.floor(gross / 100) * 100);
+    const total = Math.round((gross - discount) * 100) / 100;
     return {
         subtotal: Math.round(subtotal * 100) / 100,
         cgst: Math.round(cgst * 100) / 100,
         sgst: Math.round(sgst * 100) / 100,
+        gross,
+        redeemPoints: discount,
+        discount,
         total
     };
 }
+
+function getRedeemPointsInput() {
+    const el = document.getElementById("pos-redeem-points");
+    let pts = parseInt(el && el.value ? el.value : "0", 10);
+    if (Number.isNaN(pts) || pts < 0) pts = 0;
+    return pts;
+}
+
+window.onPosCustomerChange = function() {
+    const select = document.getElementById("pos-customer-select-dropdown");
+    const redeemBox = document.getElementById("pos-loyalty-redeem");
+    const hint = document.getElementById("pos-redeem-hint");
+    const input = document.getElementById("pos-redeem-points");
+    if (!select || !redeemBox) return;
+    if (select.value === "walkin") {
+        redeemBox.style.display = "none";
+        if (input) input.value = "0";
+        return;
+    }
+    const customer = CUSTOMERS.find(c => c.id === select.value);
+    redeemBox.style.display = "block";
+    if (hint && customer) {
+        const tier = customer.loyaltyTier || loyaltyTierClient(customer.loyaltyPoints);
+        hint.textContent = `${tier} · ${customer.loyaltyPoints} pts avail`;
+    }
+    updateRedeemHint();
+};
+
+window.updateRedeemHint = function() {
+    const hint = document.getElementById("pos-redeem-hint");
+    const select = document.getElementById("pos-customer-select-dropdown");
+    if (!hint || !select || select.value === "walkin") return;
+    const customer = CUSTOMERS.find(c => c.id === select.value);
+    if (!customer) return;
+    const totals = getCartTotals();
+    const tier = customer.loyaltyTier || loyaltyTierClient(customer.loyaltyPoints);
+    hint.textContent = `${tier} · ${customer.loyaltyPoints} pts · −₹${totals.discount}`;
+};
 
 function getCustomerCheckoutContext() {
     const customerSelect = document.getElementById("pos-customer-select-dropdown");
@@ -1198,20 +1243,21 @@ window.processRazorpayPayment = async function() {
         const createRes = await fetch(`${API_BASE_URL}/payments/create-order`, {
             method: "POST",
             headers: getAuthHeaders(),
-            body: JSON.stringify({
-                invoiceNo,
-                customerId: customerVal,
-                customerName,
-                employeeName,
-                subtotal: totals.subtotal,
-                cgst: totals.cgst,
-                sgst: totals.sgst,
-                total: totals.total,
-                cashAmount,
-                digitalAmount,
-                items
-            })
-        });
+                body: JSON.stringify({
+                    invoiceNo,
+                    customerId: customerVal,
+                    customerName,
+                    employeeName,
+                    subtotal: totals.subtotal,
+                    cgst: totals.cgst,
+                    sgst: totals.sgst,
+                    total: totals.total,
+                    cashAmount,
+                    digitalAmount,
+                    redeemPoints: totals.redeemPoints,
+                    items
+                })
+            });
         const createData = await createRes.json().catch(() => ({}));
         if (!createRes.ok) {
             alert(createData.error || "Failed to create Razorpay order");
@@ -1223,7 +1269,7 @@ window.processRazorpayPayment = async function() {
             amount: createData.amount,
             currency: createData.currency || "INR",
             name: "H2O Perfumes",
-            description: invoiceNo + (cashAmount > 0 ? ` (Cash ₹${cashAmount} + Card/UPI ₹${digitalAmount})` : ""),
+            description: invoiceNo + (cashAmount > 0 ? ` (Cash ₹${cashAmount} + Card/UPI ₹${digitalAmount})` : "") + (totals.redeemPoints ? ` · Redeem ${totals.redeemPoints} pts` : ""),
             order_id: createData.orderId,
             prefill: {
                 name: customerName !== "Walk-in Customer" ? customerName : "",
@@ -1305,6 +1351,7 @@ async function completeCashTransaction() {
                     total: totals.total,
                     paymentMethod: "Cash",
                     referenceId: "",
+                    redeemPoints: totals.redeemPoints,
                     splits: [{ method: "cash", amount: totals.total, referenceId: "" }],
                     items
                 })
@@ -1313,7 +1360,7 @@ async function completeCashTransaction() {
             if (res.ok) {
                 checkoutSuccess = true;
                 txId = data.transactionId || txId;
-                alert(`🎉 [Cloud] Transaction Completed!\n\nInvoice: ${invoiceNo}\nTotal: ₹${totals.total.toLocaleString("en-IN")}\nPayment: Cash`);
+                alert(`🎉 [Cloud] Transaction Completed!\n\nInvoice: ${invoiceNo}\nTotal: ₹${totals.total.toLocaleString("en-IN")}\nPayment: Cash${totals.redeemPoints ? `\nRedeemed: ${totals.redeemPoints} pts` : ""}`);
             } else {
                 alert(data.error || "Cash transaction failed on server");
             }
@@ -1350,18 +1397,33 @@ async function completeCashTransaction() {
 }
 
 async function finishCheckoutUi({ customerSelect, phoneNum, customerName, invoiceNo, total, txId }) {
-    if (phoneNum) {
-        const sendWA = confirm(`[WhatsApp Automation] Send digital invoice to ${customerName} (+91 ******${String(phoneNum).slice(-4)})?`);
-        if (sendWA) {
-            alert(`💬 Digital receipt queued for ${phoneNum}: invoice ${invoiceNo} ₹${total.toLocaleString("en-IN")} (https://h2oorg.com/i/${txId || ""})`);
+    if (phoneNum && useBackend && customerSelect && customerSelect.value !== "walkin") {
+        const sendSms = confirm(`Queue receipt SMS to ${customerName}?`);
+        if (sendSms) {
+            try {
+                const body = `Hi ${customerName}, thanks for shopping at H2O. Invoice ${invoiceNo} for ₹${total.toLocaleString("en-IN")} is ready.`;
+                const res = await fetch(`${API_BASE_URL}/crm/customers/${encodeURIComponent(customerSelect.value)}/offer-sms`, {
+                    method: "POST",
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ body })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) alert(data.message || "Receipt SMS queued");
+                else alert(data.error || "Could not queue receipt SMS");
+            } catch (e) {
+                console.error(e);
+            }
         }
     }
 
     cart = [];
     const cashInput = document.getElementById("pos-cash-amount");
     if (cashInput) cashInput.value = "";
+    const redeemInput = document.getElementById("pos-redeem-points");
+    if (redeemInput) redeemInput.value = "0";
     updateSplitRemainder();
     if (customerSelect) customerSelect.value = "walkin";
+    onPosCustomerChange();
     const profileDiv = document.getElementById("pos-selected-customer-profile");
     if (profileDiv) profileDiv.style.display = "none";
 
@@ -1409,6 +1471,13 @@ function renderPosInventory() {
     });
 }
 
+function loyaltyTierClient(points) {
+    const p = Number(points) || 0;
+    if (p >= 1500) return "Platinum";
+    if (p >= 500) return "Gold";
+    return "Silver";
+}
+
 // --- TAB 3: CRM / Customer Scent Profiles ---
 function renderPosCRM() {
     const tableBody = document.getElementById("pos-crm-table-body");
@@ -1417,29 +1486,106 @@ function renderPosCRM() {
     tableBody.innerHTML = "";
 
     CUSTOMERS.forEach(customer => {
-        // Mask phone number for security compliance (REQ-06)
-        const rawPhone = customer.phone;
-        const maskedPhone = rawPhone.substring(0, 7) + " ****" + rawPhone.substring(rawPhone.length - 2);
+        const rawPhone = customer.phone || "";
+        const maskedPhone = rawPhone.length > 8
+            ? rawPhone.substring(0, 7) + " ****" + rawPhone.substring(rawPhone.length - 2)
+            : rawPhone;
+        const tier = customer.loyaltyTier || loyaltyTierClient(customer.loyaltyPoints);
+        const preferred = (customer.scentProfile && customer.scentProfile.preferred) || [];
 
         const tr = document.createElement("tr");
         tr.innerHTML = `
             <td><strong>${customer.name}</strong></td>
             <td><code>${maskedPhone}</code></td>
-            <td>${customer.scentProfile.preferred.map(n => `<span class="result-note" style="font-size:0.75rem">${n}</span>`).join(" ")}</td>
-            <td><small style="color:var(--text-secondary)">${customer.scentProfile.remarks}</small></td>
+            <td>${preferred.map(n => `<span class="result-note" style="font-size:0.75rem">${n}</span>`).join(" ")}</td>
+            <td><span class="badge">${tier}</span></td>
             <td><span class="badge">${customer.loyaltyPoints} pts</span></td>
             <td>
-                <button class="btn btn-outline" style="padding:0.25rem 0.5rem; font-size:0.75rem" onclick="simulateScentFinderLink('${customer.id}')">SMS Offer</button>
+                <button class="btn btn-outline" style="padding:0.25rem 0.5rem; font-size:0.75rem" onclick="queueCustomerOfferSms('${customer.id}')">Queue SMS</button>
             </td>
         `;
         tableBody.appendChild(tr);
     });
+
+    loadUpcomingOccasions();
 }
 
-window.simulateScentFinderLink = function(customerId) {
-    const customer = CUSTOMERS.find(c => c.id === customerId);
-    if (customer) {
-        alert(`📲 [SMS Gateway] Campaign SMS dispatched to ${customer.name} (${customer.phone}):\n\n"Hi ${customer.name}, a new batch of Woody & Sandalwood fragrances has arrived! Unlock 10% off using code LOYALTY10 at H2O Kochi."`);
+window.queueCustomerOfferSms = async function(customerId) {
+    if (!useBackend) {
+        alert("SMS queue requires the cloud API.");
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE_URL}/crm/customers/${encodeURIComponent(customerId)}/offer-sms`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({})
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(data.error || "Failed to queue SMS");
+            return;
+        }
+        alert(data.message || "Offer SMS queued");
+    } catch (e) {
+        alert("SMS request failed");
+    }
+};
+
+async function loadUpcomingOccasions() {
+    const body = document.getElementById("pos-crm-occasions-body");
+    if (!body) return;
+    if (!useBackend || !localStorage.getItem("h2o_pos_token")) {
+        body.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">Login required for occasions.</td></tr>`;
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE_URL}/crm/upcoming-occasions?days=7`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error("fail");
+        const data = await res.json();
+        body.innerHTML = "";
+        if (!data.rows || !data.rows.length) {
+            body.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">No birthdays/anniversaries in the next 7 days.</td></tr>`;
+            return;
+        }
+        data.rows.forEach(row => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${row.name}</td>
+                <td>${(row.occasions || []).join(", ")}</td>
+                <td>${row.birthday ? String(row.birthday).slice(0, 10) : "—"}</td>
+                <td>${row.anniversary ? String(row.anniversary).slice(0, 10) : "—"}</td>
+                <td>${row.loyaltyTier || loyaltyTierClient(row.loyaltyPoints)}</td>
+            `;
+            body.appendChild(tr);
+        });
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">Could not load occasions.</td></tr>`;
+    }
+}
+
+window.runBirthdayOffers = async function() {
+    if (!useBackend) {
+        alert("Requires cloud API + Manager login (or CRON_SECRET).");
+        return;
+    }
+    if (!confirm("Queue birthday/anniversary offer SMS for customers due in the next 7 days?")) return;
+    try {
+        const res = await fetch(`${API_BASE_URL}/crm/birthday-offers/run`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ days: 7 })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(data.error || "Failed to run offers");
+            return;
+        }
+        const n = (data.queued || []).length;
+        alert(`Queued ${n} offer SMS.${data.twilioConfigured ? "" : " Twilio not configured — messages logged to outbox."}`);
+        loadUpcomingOccasions();
+    } catch (e) {
+        alert("Birthday offers request failed");
     }
 };
 
@@ -1526,7 +1672,78 @@ function renderPosReports() {
             historyBody.appendChild(tr);
         });
     }
+
+    loadTopPerformers();
+    loadDeadStock();
 }
+
+window.loadTopPerformers = async function() {
+    const body = document.getElementById("pos-reports-top-body");
+    if (!body) return;
+    if (!useBackend || !localStorage.getItem("h2o_pos_token")) {
+        body.innerHTML = `<tr><td colspan="3" style="color:var(--text-muted);">Login required.</td></tr>`;
+        return;
+    }
+    const days = parseInt(document.getElementById("rep-top-days")?.value || "30", 10) || 30;
+    const groupBy = document.getElementById("rep-top-group")?.value || "brand";
+    try {
+        const res = await fetch(`${API_BASE_URL}/reports/top-performers?days=${days}&groupBy=${encodeURIComponent(groupBy)}`, {
+            headers: getAuthHeaders()
+        });
+        if (!res.ok) throw new Error("fail");
+        const data = await res.json();
+        body.innerHTML = "";
+        if (!data.rows || !data.rows.length) {
+            body.innerHTML = `<tr><td colspan="3" style="color:var(--text-muted);">No paid sales in this window.</td></tr>`;
+            return;
+        }
+        data.rows.forEach(row => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${row.label}</td>
+                <td>₹${parseFloat(row.revenue).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</td>
+                <td>${row.units}</td>
+            `;
+            body.appendChild(tr);
+        });
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="3" style="color:var(--text-muted);">Could not load top performers.</td></tr>`;
+    }
+};
+
+window.loadDeadStock = async function() {
+    const body = document.getElementById("pos-reports-dead-body");
+    if (!body) return;
+    if (!useBackend || !localStorage.getItem("h2o_pos_token")) {
+        body.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">Login required.</td></tr>`;
+        return;
+    }
+    const days = parseInt(document.getElementById("rep-dead-days")?.value || "30", 10) || 30;
+    try {
+        const res = await fetch(`${API_BASE_URL}/reports/dead-stock?days=${days}`, { headers: getAuthHeaders() });
+        if (!res.ok) throw new Error("fail");
+        const data = await res.json();
+        body.innerHTML = "";
+        if (!data.rows || !data.rows.length) {
+            body.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">No dead stock for this window.</td></tr>`;
+            return;
+        }
+        data.rows.forEach(row => {
+            const tr = document.createElement("tr");
+            const last = row.last_sale ? new Date(row.last_sale).toLocaleDateString() : "Never";
+            tr.innerHTML = `
+                <td>${row.perfume} (${row.size}) · ${row.brand}</td>
+                <td><code>${row.sku}</code></td>
+                <td>${row.qty}</td>
+                <td>${row.batch_age_days ?? "—"}</td>
+                <td>${last}</td>
+            `;
+            body.appendChild(tr);
+        });
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted);">Could not load dead stock.</td></tr>`;
+    }
+};
 
 window.voidTransaction = async function(txId) {
     if (!txId) return;
@@ -1867,6 +2084,8 @@ window.saveNewCustomer = async function() {
     const dislikeStr = document.getElementById("cust-new-dislike").value.trim();
     const remarks = document.getElementById("cust-new-remarks").value.trim();
     const skinType = document.getElementById("cust-new-skintype").value;
+    const birthday = document.getElementById("cust-new-birthday")?.value || null;
+    const anniversary = document.getElementById("cust-new-anniversary")?.value || null;
 
     if (!name || !phone) {
         alert("Please enter both the Name and Phone Number.");
@@ -1883,6 +2102,9 @@ window.saveNewCustomer = async function() {
         phone: phone,
         email: email || "N/A",
         loyaltyPoints: 0,
+        loyaltyTier: "Silver",
+        birthday,
+        anniversary,
         scentProfile: {
             preferred: preferred,
             disliked: disliked,
@@ -1900,7 +2122,8 @@ window.saveNewCustomer = async function() {
                 body: JSON.stringify({
                     name, phone, email,
                     preferred, disliked,
-                    skinType, remarks
+                    skinType, remarks,
+                    birthday, anniversary
                 })
             });
             if (res.ok) {

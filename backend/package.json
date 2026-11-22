@@ -9,7 +9,8 @@
     "db:seed": "node config/seed.js",
     "db:migrate-pii": "node scripts/migrate-encrypt-pii.js",
     "db:migrate-payments": "node scripts/migrate-payments.js",
-    "db:migrate-phase2": "node scripts/migrate-phase2.js"
+    "db:migrate-phase2": "node scripts/migrate-phase2.js",
+    "db:migrate-phase3": "node scripts/migrate-phase3.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
