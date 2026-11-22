@@ -69,11 +69,13 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 ---
 
 ## Phase 4 — Integration polish (REQ-06, REQ-07)
-- ⬜ Automate Tally export (currently manual XML download) — scheduled push or Tally's HTTP import API.
-- ⬜ Optional: Zoho Books sync as an alternative ledger integration.
-- ⬜ Dedicated owner/manager remote dashboard view (read-only KPIs + inventory) distinct from the cashier POS screen, confirmed usable from a phone browser off the store Wi-Fi.
+- ✅ Server-side Tally Sales voucher XML (`POST/GET /api/integrations/tally/export`); `ledger_exports` audit log; marks `tally_exported_at`.
+- ✅ Optional auto-push when `TALLY_HTTP_URL` (+ optional `TALLY_HTTP_TOKEN`) is set; cron via `X-Cron-Secret` or Manager JWT.
+- ✅ Optional Zoho Books invoice sync (`POST /api/integrations/zoho/sync`) when `ZOHO_*` env is set; otherwise skipped.
+- ✅ Phone owner dashboard: `frontend/owner.html` → `GET /api/owner/dashboard` (Manager/Owner JWT; today’s sales, staff commission, low/dead stock).
 
 **Exit criteria:** daily sales land in the accounting ledger without manual file handling; owner checks the shop from home on a phone.
+**Status:** ✅ Code complete — set `TALLY_HTTP_URL` (and/or Zoho keys) on Render for hands-off push; open `https://www.h2oorg.com/owner.html` on a phone with Manager login.
 
 ---
 

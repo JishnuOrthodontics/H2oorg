@@ -770,7 +770,7 @@ router.post('/shifts/clock-out', authenticateToken, async (req, res) => {
 router.get('/shifts/me', authenticateToken, async (req, res) => {
     try {
         const open = await db.query(
-            'SELECT * FROM shift_logs WHERE user_id = $1 AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1',
+            'SELECT * FROM shift_logs WHERE user_id = $1 AND clock_out IS NULL LIMIT 1',
             [req.user.id]
         );
         const today = await db.query(
@@ -795,6 +795,83 @@ router.get('/shifts/me', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to load shifts' });
+    }
+});
+
+// --- OWNER DASHBOARD (read-only aggregate for phone) ---
+router.get('/owner/dashboard', authenticateToken, async (req, res) => {
+    if (!isManagerRole(req.user.role)) {
+        return res.status(403).json({ error: 'Manager / Owner only' });
+    }
+    try {
+        const summary = await db.query(
+            `SELECT 
+                coalesce(SUM(total), 0)::numeric as gross_sales,
+                coalesce(SUM(cgst) + SUM(sgst), 0)::numeric as total_tax,
+                coalesce(COUNT(*), 0)::int as tx_count,
+                coalesce(SUM(subtotal) * ${COMMISSION_RATE}, 0)::numeric as commission
+             FROM transactions
+             WHERE date >= CURRENT_DATE AND COALESCE(payment_status, 'paid') = 'paid'`
+        );
+
+        const byEmp = await db.query(
+            `SELECT 
+                coalesce(u.name, t.employee_name, 'Unknown') as name,
+                coalesce(SUM(t.subtotal), 0)::numeric as sales,
+                coalesce(SUM(t.subtotal) * ${COMMISSION_RATE}, 0)::numeric as commission,
+                COUNT(*)::int as tx_count
+             FROM transactions t
+             LEFT JOIN users u ON u.id = t.employee_id
+             WHERE t.date >= CURRENT_DATE AND COALESCE(t.payment_status, 'paid') = 'paid'
+             GROUP BY coalesce(u.name, t.employee_name, 'Unknown')
+             ORDER BY sales DESC`
+        );
+
+        const inventory = await db.query(
+            `SELECT p.name AS perfume, p.brand, v.size, v.sku,
+                    coalesce(SUM(b.qty_current), 0)::int AS qty,
+                    MIN(b.exp_date) AS nearest_exp
+             FROM variants v
+             JOIN perfumes p ON p.id = v.perfume_id
+             LEFT JOIN batches b ON b.variant_id = v.id
+             GROUP BY p.name, p.brand, v.size, v.sku
+             ORDER BY qty ASC
+             LIMIT 40`
+        );
+
+        const dead = await db.query(
+            `SELECT p.name AS perfume, v.size, v.sku,
+                    coalesce(SUM(b.qty_current), 0)::int AS qty,
+                    (CURRENT_DATE - MIN(b.mfg_date))::int AS batch_age_days
+             FROM variants v
+             JOIN perfumes p ON p.id = v.perfume_id
+             JOIN batches b ON b.variant_id = v.id
+             LEFT JOIN LATERAL (
+                SELECT MAX(t.date) AS last_sale
+                FROM transaction_items ti
+                JOIN transactions t ON t.id = ti.transaction_id
+                WHERE ti.variant_id = v.id AND COALESCE(t.payment_status, 'paid') = 'paid'
+             ) ls ON true
+             GROUP BY p.name, v.size, v.sku
+             HAVING coalesce(SUM(b.qty_current), 0) > 0
+                AND (MAX(ls.last_sale) IS NULL OR MAX(ls.last_sale) < CURRENT_DATE - INTERVAL '30 days')
+             ORDER BY batch_age_days DESC NULLS LAST
+             LIMIT 20`
+        );
+
+        const lowStock = inventory.rows.filter((r) => Number(r.qty) < 10);
+
+        res.json({
+            generatedAt: new Date().toISOString(),
+            summary: summary.rows[0],
+            byEmployee: byEmp.rows,
+            lowStock,
+            deadStock: dead.rows,
+            inventory: inventory.rows
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to load owner dashboard' });
     }
 });
 

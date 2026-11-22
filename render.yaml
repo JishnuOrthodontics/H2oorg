@@ -39,3 +39,15 @@ services:
         sync: false
       - key: CRON_SECRET
         sync: false
+      - key: TALLY_HTTP_URL
+        sync: false
+      - key: TALLY_HTTP_TOKEN
+        sync: false
+      - key: ZOHO_CLIENT_ID
+        sync: false
+      - key: ZOHO_CLIENT_SECRET
+        sync: false
+      - key: ZOHO_REFRESH_TOKEN
+        sync: false
+      - key: ZOHO_ORG_ID
+        sync: false

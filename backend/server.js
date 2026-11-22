@@ -3,13 +3,16 @@ const cors = require('cors');
 const { validateEnv, getAllowedOrigins } = require('./config/env');
 const apiRouter = require('./routes/api');
 const paymentsRouter = require('./routes/payments');
+const integrationsRouter = require('./routes/integrations');
 const webhooksRouter = require('./routes/webhooks');
 const db = require('./config/db');
 const { migratePayments } = require('./scripts/migrate-payments');
 const { migratePhase2 } = require('./scripts/migrate-phase2');
 const { migratePhase3 } = require('./scripts/migrate-phase3');
+const { migratePhase4 } = require('./scripts/migrate-phase4');
 const { isConfigured } = require('./config/razorpay');
 const { isTwilioConfigured } = require('./services/messaging');
+const { isZohoConfigured } = require('./services/zohoBooks');
 
 validateEnv();
 
@@ -36,6 +39,7 @@ app.use(express.json());
 
 app.use('/api', apiRouter);
 app.use('/api/payments', paymentsRouter);
+app.use('/api/integrations', integrationsRouter);
 
 app.get('/health', async (req, res) => {
     try {
@@ -47,7 +51,9 @@ app.get('/health', async (req, res) => {
                 api: 'healthy',
                 database: 'connected',
                 razorpay: isConfigured() ? 'configured' : 'not_configured',
-                twilio: isTwilioConfigured() ? 'configured' : 'not_configured'
+                twilio: isTwilioConfigured() ? 'configured' : 'not_configured',
+                zoho: isZohoConfigured() ? 'configured' : 'not_configured',
+                tallyHttp: process.env.TALLY_HTTP_URL ? 'configured' : 'not_configured'
             }
         });
     } catch (err) {
@@ -70,12 +76,15 @@ app.get('/', (req, res) => {
 Promise.all([
     migratePayments().catch((err) => console.error('Payment migration on boot failed:', err.message)),
     migratePhase2().catch((err) => console.error('Phase 2 migration on boot failed:', err.message)),
-    migratePhase3().catch((err) => console.error('Phase 3 migration on boot failed:', err.message))
+    migratePhase3().catch((err) => console.error('Phase 3 migration on boot failed:', err.message)),
+    migratePhase4().catch((err) => console.error('Phase 4 migration on boot failed:', err.message))
 ]).finally(() => {
     app.listen(PORT, '0.0.0.0', () => {
         console.log(`🚀 Server running on port ${PORT}`);
         console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
         console.log(`💳 Razorpay: ${isConfigured() ? 'configured' : 'not configured (set RAZORPAY_* env)'}`);
         console.log(`📱 Twilio SMS: ${isTwilioConfigured() ? 'configured' : 'not configured (messages logged to outbox)'}`);
+        console.log(`📒 Zoho Books: ${isZohoConfigured() ? 'configured' : 'not configured'}`);
+        console.log(`📥 Tally HTTP: ${process.env.TALLY_HTTP_URL ? 'configured' : 'generate-only (set TALLY_HTTP_URL to push)'}`);
     });
 });

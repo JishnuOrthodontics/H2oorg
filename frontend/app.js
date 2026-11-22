@@ -1837,7 +1837,37 @@ window.toggleShiftClock = async function() {
 };
 
 // --- Tally ERP XML Export Engine (REQ-06 / Independent Ledger) ---
-window.exportToTally = function() {
+window.exportToTally = async function() {
+    const xmlContainer = document.getElementById("tally-xml-content");
+    const statusEl = document.getElementById("tally-export-status");
+    const modal = document.getElementById("tally-export-modal");
+    if (modal) modal.style.display = "flex";
+    if (statusEl) statusEl.textContent = "Generating…";
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (useBackend && localStorage.getItem("h2o_pos_token")) {
+        try {
+            const res = await fetch(
+                `${API_BASE_URL}/integrations/tally/export?from=${encodeURIComponent(today)}&to=${encodeURIComponent(today)}`,
+                { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ from: today, to: today, pushRemote: true }) }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Tally export failed");
+            if (xmlContainer) xmlContainer.textContent = data.xml || "";
+            if (statusEl) {
+                const pushNote = data.tallyConfigured
+                    ? (data.status === "pushed" ? "Pushed to TALLY_HTTP_URL." : `Push status: ${data.status}.`)
+                    : "XML only (set TALLY_HTTP_URL on API to auto-push).";
+                statusEl.textContent = `${data.voucherCount || 0} vouchers · ${pushNote}`;
+            }
+            return;
+        } catch (e) {
+            console.warn("Server Tally export failed, falling back to local XML", e);
+            if (statusEl) statusEl.textContent = `Server export failed (${e.message}). Showing local XML.`;
+        }
+    }
+
     let tallyXml = `<?xml version="1.0"?>
 <ENVELOPE>
   <HEADER>
@@ -1851,40 +1881,32 @@ window.exportToTally = function() {
       <REQUESTDATA>\n`;
 
     salesHistory.filter(tx => (tx.paymentStatus || "paid") === "paid").forEach(tx => {
-        const cleanDate = tx.date.split("T")[0].replace(/-/g, "");
+        const cleanDate = String(tx.date).split("T")[0].replace(/-/g, "");
         tallyXml += `        <TALLYMESSAGE xmlns:UDF="TallyUDF">
           <VOUCHER VCHTYPE="Sales" ACTION="Create" OBJVIEW="AccountingVoucher">
             <DATE>${cleanDate}</DATE>
             <VOUCHERNUMBER>${tx.invoiceNo}</VOUCHERNUMBER>
             <PARTYLEDGERNAME>${tx.customerName === "Walk-in Customer" ? "Cash" : tx.customerName}</PARTYLEDGERNAME>
             <EFFECTIVEDATE>${cleanDate}</EFFECTIVEDATE>
-            
-            <!-- Credit Sales Account -->
             <ALLLEDGERENTRIES.LIST>
               <LEDGERNAME>Sales Account</LEDGERNAME>
               <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
-              <AMOUNT>${(tx.subtotal).toFixed(2)}</AMOUNT>
+              <AMOUNT>${(Number(tx.subtotal) || 0).toFixed(2)}</AMOUNT>
             </ALLLEDGERENTRIES.LIST>
-            
-            <!-- CGST Ledger Entry -->
             <ALLLEDGERENTRIES.LIST>
               <LEDGERNAME>CGST @ 9%</LEDGERNAME>
               <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
-              <AMOUNT>${tx.cgst.toFixed(2)}</AMOUNT>
+              <AMOUNT>${(Number(tx.cgst) || 0).toFixed(2)}</AMOUNT>
             </ALLLEDGERENTRIES.LIST>
-            
-            <!-- SGST Ledger Entry -->
             <ALLLEDGERENTRIES.LIST>
               <LEDGERNAME>SGST @ 9%</LEDGERNAME>
               <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
-              <AMOUNT>${tx.sgst.toFixed(2)}</AMOUNT>
+              <AMOUNT>${(Number(tx.sgst) || 0).toFixed(2)}</AMOUNT>
             </ALLLEDGERENTRIES.LIST>
-
-            <!-- Debit Bank/Cash Account -->
             <ALLLEDGERENTRIES.LIST>
               <LEDGERNAME>${tx.paymentMethod === "Cash" ? "Cash-in-Hand" : "Razorpay Bank A/c"}</LEDGERNAME>
               <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
-              <AMOUNT>-${tx.total.toFixed(2)}</AMOUNT>
+              <AMOUNT>-${(Number(tx.total) || 0).toFixed(2)}</AMOUNT>
             </ALLLEDGERENTRIES.LIST>
           </VOUCHER>
         </TALLYMESSAGE>\n`;
@@ -1895,14 +1917,8 @@ window.exportToTally = function() {
   </BODY>
 </ENVELOPE>`;
 
-    // Render in modal
-    const xmlContainer = document.getElementById("tally-xml-content");
-    if (xmlContainer) {
-        xmlContainer.textContent = tallyXml;
-    }
-    
-    const modal = document.getElementById("tally-export-modal");
-    modal.style.display = "flex";
+    if (xmlContainer) xmlContainer.textContent = tallyXml;
+    if (statusEl && !useBackend) statusEl.textContent = "Offline mock — local XML only.";
 };
 
 window.closeTallyModal = function() {

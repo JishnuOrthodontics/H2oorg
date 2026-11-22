@@ -27,6 +27,7 @@
                     <a href="#collections">Collections</a>
                     <a href="#scent-finder">Scent Finder</a>
                     <a href="#experience">Our Experience</a>
+                    <a href="owner.html" class="btn btn-outline" style="padding: 0.5rem 1.2rem; font-size: 0.75rem;">Owner</a>
                     <a href="#" class="btn btn-outline" id="btn-pos-portal" style="padding: 0.5rem 1.2rem; font-size: 0.75rem;">Staff POS Portal</a>
                 </nav>
             </div>
@@ -659,8 +660,8 @@
         <div class="modal-content" style="max-width: 600px;">
             <button class="modal-close" onclick="closeTallyModal()">&times;</button>
             <h3 class="font-serif" style="font-size: 1.6rem; color: var(--primary-gold); margin-bottom: 1rem;">Tally ERP Import Voucher</h3>
-            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1.5rem;">Copy the XML payload below or click download to import these vouchers into Tally Prime's sales ledger.</p>
-            
+            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem;">Server-built sales vouchers for today. Download for Tally Prime import, or configure <code>TALLY_HTTP_URL</code> on the API for auto-push.</p>
+            <p id="tally-export-status" style="color: var(--primary-gold); font-size: 0.8rem; margin-bottom: 1rem;"></p>
             <pre id="tally-xml-content" style="background: #050506; border: 1px solid rgba(255,255,255,0.05); padding: 1rem; border-radius: 4px; color: #10b981; font-family: monospace; font-size: 0.75rem; height: 280px; overflow: auto; text-align: left; white-space: pre;"></pre>
             
             <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;">

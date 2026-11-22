@@ -71,7 +71,9 @@ See `.env.example` / `backend/.env.example`.
 | `RAZORPAY_KEY_SECRET` | Razorpay Key Secret |
 | `RAZORPAY_WEBHOOK_SECRET` | Webhook signing secret |
 | `TWILIO_ACCOUNT_SID` / `AUTH_TOKEN` / `FROM` | Optional SMS (else outbox `logged`) |
-| `CRON_SECRET` | Optional auth for birthday-offers cron |
+| `CRON_SECRET` | Auth for birthday-offers + Tally/Zoho cron jobs (`X-Cron-Secret`) |
+| `TALLY_HTTP_URL` / `TALLY_HTTP_TOKEN` | Optional Tally HTTP import push |
+| `ZOHO_CLIENT_ID` / `SECRET` / `REFRESH_TOKEN` / `ORG_ID` | Optional Zoho Books sync |
 | `PORT` | API port (default `5000`) |
 
 Never commit `.env`. Production secrets live in the Render dashboard.
@@ -97,9 +99,16 @@ Never commit `.env`. Production secrets live in the Render dashboard.
 - Loyalty: Silver (&lt;500) / Gold (500–1499) / Platinum (≥1500); redeem **100 pts = ₹100** at checkout.
 - Twilio: set `TWILIO_*` on Render. Cron: `POST /api/crm/birthday-offers/run` with header `X-Cron-Secret: $CRON_SECRET` (or Manager JWT).
 
+### Ledger & owner phone (Phase 4)
+
+- **Tally:** Reports → Export builds XML on the API (`POST /api/integrations/tally/export`). Cron yesterday’s sales with `X-Cron-Secret`. Set `TALLY_HTTP_URL` to push; otherwise download XML from the modal.
+- **Zoho (optional):** `POST /api/integrations/zoho/sync` when all `ZOHO_*` vars are set.
+- **Owner phone UI:** https://www.h2oorg.com/owner.html — Manager login, read-only today’s KPIs / low & dead stock (`GET /api/owner/dashboard`).
+
 ## Production
 
 - **Site:** https://www.h2oorg.com  
+- **Owner dashboard:** https://www.h2oorg.com/owner.html  
 - **API:** https://h2o-pos-api.onrender.com/api  
 - **Health:** https://h2o-pos-api.onrender.com/health  
 
@@ -116,7 +125,8 @@ Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the `
 | `npm run db:migrate-payments` | Add payment columns / `payment_orders` / `payment_splits` |
 | `npm run db:migrate-phase2` | employee_id, void fields, `shift_logs`, `audit_overrides` |
 | `npm run db:migrate-phase3` | birthday/anniversary, `loyalty_redemptions`, `message_outbox` |
+| `npm run db:migrate-phase4` | `ledger_exports`, `tally_exported_at` / `zoho_exported_at` |
 
 ## Roadmap
 
-Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0–3** complete in code. Add Razorpay / Twilio keys on Render when ready for live payments and SMS.
+Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0–4** complete in code. Add Razorpay / Twilio / optional Tally HTTP or Zoho keys on Render when ready.

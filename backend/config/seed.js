@@ -6,6 +6,7 @@ validateEnv();
 
 const schema = `
 -- Drop existing tables if they exist
+DROP TABLE IF EXISTS ledger_exports CASCADE;
 DROP TABLE IF EXISTS message_outbox CASCADE;
 DROP TABLE IF EXISTS loyalty_redemptions CASCADE;
 DROP TABLE IF EXISTS audit_overrides CASCADE;
@@ -100,7 +101,9 @@ CREATE TABLE transactions (
     employee_id INT REFERENCES users(id),
     voided_at TIMESTAMPTZ,
     voided_by INT REFERENCES users(id),
-    void_reason TEXT
+    void_reason TEXT,
+    tally_exported_at TIMESTAMPTZ,
+    zoho_exported_at TIMESTAMPTZ
 );
 
 -- 7. Transaction Items Table
@@ -176,6 +179,20 @@ CREATE TABLE message_outbox (
     error TEXT,
     scheduled_for TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 14. Ledger export audit (Tally / Zoho)
+CREATE TABLE ledger_exports (
+    id SERIAL PRIMARY KEY,
+    provider VARCHAR(30) NOT NULL,
+    period_from DATE NOT NULL,
+    period_to DATE NOT NULL,
+    voucher_count INT NOT NULL DEFAULT 0,
+    status VARCHAR(20) NOT NULL DEFAULT 'generated',
+    payload TEXT,
+    remote_ref VARCHAR(200),
+    error TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 `;
