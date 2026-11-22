@@ -123,13 +123,14 @@ router.get('/products', async (req, res) => {
                     'barcode', v.barcode
                 )), '[]') FROM variants v WHERE v.perfume_id = p.id) as variants,
                 (SELECT coalesce(json_agg(json_build_object(
-                    'id', b.id, 
+                    'id', b.id,
+                    'variantId', b.variant_id,
                     'batchNo', b.batch_no, 
                     'mfgDate', to_char(b.mfg_date, 'YYYY-MM-DD'), 
                     'expDate', to_char(b.exp_date, 'YYYY-MM-DD'), 
                     'cost', b.cost::numeric, 
                     'qty', b.qty_current
-                )), '[]') FROM batches b WHERE b.perfume_id = p.id ORDER BY b.exp_date ASC) as batches
+                ) ORDER BY b.exp_date ASC), '[]') FROM batches b WHERE b.perfume_id = p.id) as batches
             FROM perfumes p;
         `;
         const result = await db.query(queryText);
@@ -142,10 +143,17 @@ router.get('/products', async (req, res) => {
 
 // --- ADD NEW PRODUCT / VARIANT (manager PIN if cashier) ---
 router.post('/products', authenticateToken, async (req, res) => {
-    const { name, brand, family, size, concentration, price, cost, batchNo, qty, expiry, notes } = req.body;
+    const { name, brand, family, size, concentration, price, cost, batchNo, qty, expiry, notes, image } = req.body;
 
     if (!name || !brand || !size || !price || !cost || !batchNo || !qty || !expiry) {
         return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const imageValue = (typeof image === 'string' && image.trim())
+        ? image.trim()
+        : 'assets/images/oud.png';
+    if (imageValue.length > 1_500_000) {
+        return res.status(400).json({ error: 'Image is too large (max ~1.5MB encoded). Use a smaller photo or a URL.' });
     }
 
     try {
@@ -161,11 +169,14 @@ router.post('/products', authenticateToken, async (req, res) => {
 
         if (perfCheck.rows.length > 0) {
             perfumeId = perfCheck.rows[0].id;
+            if (image && String(image).trim()) {
+                await db.query('UPDATE perfumes SET image = $1 WHERE id = $2', [imageValue, perfumeId]);
+            }
         } else {
             const ingredientNotes = notes ? notes.split(',').map(n => n.trim()) : ['Fragrance Blends'];
             await db.query(
                 'INSERT INTO perfumes (id, name, brand, family, gender, notes, image, description) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-                [perfumeId, name, brand, family || 'Woody', 'Unisex', ingredientNotes, 'assets/images/oud.png', `${name} by ${brand}`]
+                [perfumeId, name, brand, family || 'Woody', 'Unisex', ingredientNotes, imageValue, `${name} by ${brand}`]
             );
         }
 

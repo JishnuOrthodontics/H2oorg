@@ -53,7 +53,7 @@ CREATE TABLE perfumes (
     family VARCHAR(50) NOT NULL,
     gender VARCHAR(20) NOT NULL DEFAULT 'Unisex',
     notes TEXT[],
-    image VARCHAR(255),
+    image TEXT,
     description TEXT
 );
 

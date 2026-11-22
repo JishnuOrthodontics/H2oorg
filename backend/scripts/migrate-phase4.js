@@ -22,6 +22,9 @@ CREATE INDEX IF NOT EXISTS idx_ledger_exports_provider ON ledger_exports (provid
 
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS tally_exported_at TIMESTAMPTZ;
 ALTER TABLE transactions ADD COLUMN IF NOT EXISTS zoho_exported_at TIMESTAMPTZ;
+
+-- Catalog images may be URLs or compressed data URLs
+ALTER TABLE perfumes ALTER COLUMN image TYPE TEXT;
 `;
 
 async function migratePhase4() {

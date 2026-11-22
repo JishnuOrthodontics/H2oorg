@@ -35,7 +35,7 @@ app.use(cors({
 // Razorpay webhooks need the raw body for HMAC verification
 app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhooksRouter);
 
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 app.use('/api', apiRouter);
 app.use('/api/payments', paymentsRouter);

@@ -114,7 +114,9 @@ const PERFUMES = [
             { id: "v1_3", size: "100ml", concentration: "EDP", price: 7999, sku: "AUR-ROD-EDP-100", barcode: "890123400013" }
         ],
         batches: [
-            { id: "b1_1", batchNo: "B-OUD-26A", mfgDate: "2026-01-10", expDate: "2031-01-10", cost: 2200, qty: 18 }
+            { id: "b1_1", variantId: "v1_1", batchNo: "B-OUD-26A", mfgDate: "2026-01-10", expDate: "2031-01-10", cost: 2200, qty: 8 },
+            { id: "b1_2", variantId: "v1_2", batchNo: "B-OUD-26A", mfgDate: "2026-01-10", expDate: "2031-01-10", cost: 2800, qty: 6 },
+            { id: "b1_3", variantId: "v1_3", batchNo: "B-OUD-26A", mfgDate: "2026-01-10", expDate: "2031-01-10", cost: 4200, qty: 4 }
         ]
     },
     {
@@ -131,7 +133,8 @@ const PERFUMES = [
             { id: "v2_2", size: "100ml", concentration: "EDP", price: 4499, sku: "AUR-NBB-EDP-100", barcode: "890123400022" }
         ],
         batches: [
-            { id: "b2_1", batchNo: "B-CIT-26B", mfgDate: "2026-02-15", expDate: "2029-02-15", cost: 1300, qty: 25 }
+            { id: "b2_1", variantId: "v2_1", batchNo: "B-CIT-26B", mfgDate: "2026-02-15", expDate: "2029-02-15", cost: 1300, qty: 15 },
+            { id: "b2_2", variantId: "v2_2", batchNo: "B-CIT-26B", mfgDate: "2026-02-15", expDate: "2029-02-15", cost: 2000, qty: 10 }
         ]
     },
     {
@@ -141,14 +144,15 @@ const PERFUMES = [
         family: "Floral",
         gender: "Feminine",
         notes: ["Damask Rose", "Mogra Jasmine", "Patchouli", "Vanilla"],
-        image: "assets/images/floral.png", // We'll fall back gracefully if missing, or use a placeholder styled div
+        image: "assets/images/floral.png",
         description: "An opulent floral bouquet combining rich Damask rose with local Mogra jasmine, sweetened with Madagascar vanilla and patchouli.",
         variants: [
             { id: "v3_1", size: "50ml", concentration: "EDP", price: 3299, sku: "AUR-JVR-EDP-50", barcode: "890123400031" },
             { id: "v3_2", size: "100ml", concentration: "EDP", price: 5299, sku: "AUR-JVR-EDP-100", barcode: "890123400032" }
         ],
         batches: [
-            { id: "b3_1", batchNo: "B-FLO-26A", mfgDate: "2026-03-01", expDate: "2030-03-01", cost: 1500, qty: 12 }
+            { id: "b3_1", variantId: "v3_1", batchNo: "B-FLO-26A", mfgDate: "2026-03-01", expDate: "2030-03-01", cost: 1500, qty: 7 },
+            { id: "b3_2", variantId: "v3_2", batchNo: "B-FLO-26A", mfgDate: "2026-03-01", expDate: "2030-03-01", cost: 2400, qty: 5 }
         ]
     },
     {
@@ -165,7 +169,8 @@ const PERFUMES = [
             { id: "v4_2", size: "100ml", concentration: "EDP", price: 5999, sku: "AJM-CSW-EDP-100", barcode: "890123400042" }
         ],
         batches: [
-            { id: "b4_1", batchNo: "B-SPI-26C", mfgDate: "2026-04-12", expDate: "2031-04-12", cost: 1800, qty: 15 }
+            { id: "b4_1", variantId: "v4_1", batchNo: "B-SPI-26C", mfgDate: "2026-04-12", expDate: "2031-04-12", cost: 1800, qty: 9 },
+            { id: "b4_2", variantId: "v4_2", batchNo: "B-SPI-26C", mfgDate: "2026-04-12", expDate: "2031-04-12", cost: 2600, qty: 6 }
         ]
     }
 ];
@@ -1468,23 +1473,27 @@ function renderPosInventory() {
     tableBody.innerHTML = "";
 
     PERFUMES.forEach(perfume => {
+        const batches = Array.isArray(perfume.batches) ? perfume.batches : [];
         perfume.variants.forEach(variant => {
-            const batch = perfume.batches[0] || { batchNo: "N/A", mfgDate: "N/A", expDate: "N/A", qty: 0 };
-            
-            // Highlight low stock or near expiry
-            const isLowStock = batch.qty < 10;
-            const stockStatus = isLowStock 
-                ? `<span style="color:#ef4444; font-weight:600">⚠️ ${batch.qty} (Low)</span>` 
-                : `<span style="color:#10b981">${batch.qty}</span>`;
+            const variantBatches = batches.filter(
+                (b) => b.variantId === variant.id || b.variant_id === variant.id
+            );
+            const qty = variantBatches.reduce((sum, b) => sum + (Number(b.qty) || 0), 0);
+            const nearest = variantBatches[0] || { batchNo: "N/A", expDate: "N/A" };
+
+            const isLowStock = qty < 10;
+            const stockStatus = isLowStock
+                ? `<span style="color:#ef4444; font-weight:600">⚠️ ${qty} (Low)</span>`
+                : `<span style="color:#10b981">${qty}</span>`;
 
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td><strong>${perfume.name}</strong><br><small style="color:var(--text-muted)">${perfume.brand}</small></td>
                 <td>${variant.size} (${variant.concentration})</td>
                 <td><code>${variant.sku}</code></td>
-                <td><code>${batch.batchNo}</code></td>
-                <td><small>${batch.expDate}</small></td>
-                <td>₹${variant.price.toLocaleString('en-IN')}</td>
+                <td><code>${nearest.batchNo || "N/A"}</code></td>
+                <td><small>${nearest.expDate || "N/A"}</small></td>
+                <td>₹${Number(variant.price).toLocaleString('en-IN')}</td>
                 <td>${stockStatus}</td>
                 <td>
                     <button class="btn btn-outline" style="padding:0.25rem 0.5rem; font-size:0.75rem" onclick="openRestockModal('${perfume.id}', '${variant.id}')">Add Stock</button>
@@ -2295,6 +2304,87 @@ function renderCustomerDropdown() {
 // --- INVENTORY: ADD PRODUCT & RESTOCK LOGIC ---
 let activeRestockPerfumeId = null;
 let activeRestockVariantId = null;
+let inventoryImageDataUrl = null;
+
+function setInventoryImagePreview(src) {
+    const img = document.getElementById("inv-new-image-preview");
+    const placeholder = document.getElementById("inv-new-image-placeholder");
+    const clearBtn = document.getElementById("inv-new-image-clear");
+    if (img) {
+        if (src) {
+            img.src = src;
+            img.style.display = "block";
+        } else {
+            img.removeAttribute("src");
+            img.style.display = "none";
+        }
+    }
+    if (placeholder) placeholder.style.display = src ? "none" : "block";
+    if (clearBtn) clearBtn.style.display = src ? "inline-flex" : "none";
+}
+
+window.clearInventoryImage = function() {
+    inventoryImageDataUrl = null;
+    const fileInput = document.getElementById("inv-new-image-file");
+    if (fileInput) fileInput.value = "";
+    setInventoryImagePreview(null);
+};
+
+function compressImageFile(file, maxSide = 900, quality = 0.72) {
+    return new Promise((resolve, reject) => {
+        if (!file || !file.type.startsWith("image/")) {
+            reject(new Error("Please choose an image file (JPG, PNG, WebP, or GIF)."));
+            return;
+        }
+        if (file.size > 8 * 1024 * 1024) {
+            reject(new Error("Image must be under 8MB before compression."));
+            return;
+        }
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Could not read image file."));
+        reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error("Invalid image file."));
+            img.onload = () => {
+                const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                const w = Math.max(1, Math.round(img.width * scale));
+                const h = Math.max(1, Math.round(img.height * scale));
+                const canvas = document.createElement("canvas");
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, w, h);
+                let dataUrl = canvas.toDataURL("image/jpeg", quality);
+                // Tighten quality if still large for API payload
+                if (dataUrl.length > 900000) {
+                    dataUrl = canvas.toDataURL("image/jpeg", 0.55);
+                }
+                if (dataUrl.length > 1_400_000) {
+                    reject(new Error("Image is still too large after compression. Try a smaller photo."));
+                    return;
+                }
+                resolve(dataUrl);
+            };
+            img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+window.onInventoryImageFileChange = async function(event) {
+    const file = event.target && event.target.files && event.target.files[0];
+    if (!file) {
+        clearInventoryImage();
+        return;
+    }
+    try {
+        inventoryImageDataUrl = await compressImageFile(file);
+        setInventoryImagePreview(inventoryImageDataUrl);
+    } catch (err) {
+        clearInventoryImage();
+        alert(err.message || "Could not use that image.");
+    }
+};
 
 window.openAddInventoryModal = function() {
     const modal = document.getElementById("add-inventory-modal");
@@ -2313,6 +2403,7 @@ window.openAddInventoryModal = function() {
         document.getElementById("inv-new-notes").value = "";
         document.getElementById("inv-new-family").value = "Woody";
         document.getElementById("inv-new-conc").value = "EDP";
+        clearInventoryImage();
     }
 };
 
@@ -2335,9 +2426,10 @@ window.saveNewInventory = async function() {
     const qty = parseInt(document.getElementById("inv-new-qty").value);
     const expiry = document.getElementById("inv-new-expiry").value;
     const notesStr = document.getElementById("inv-new-notes").value.trim();
+    const image = inventoryImageDataUrl || null;
 
-    if (!name || !brand || !size || isNaN(price) || isNaN(cost) || !batchNo || isNaN(qty) || !expiry) {
-        alert("Please fill in all required fields (*) with valid numbers.");
+    if (!name || !brand || !size || isNaN(price) || isNaN(cost) || !batchNo || isNaN(qty) || qty <= 0 || !expiry) {
+        alert("Please fill in all required fields (*) with valid numbers (qty must be > 0).");
         return;
     }
 
@@ -2366,6 +2458,7 @@ window.saveNewInventory = async function() {
                 name, brand, family, size, concentration: conc,
                 price, cost, batchNo, qty, expiry, notes: notesStr
             };
+            if (image) payload.image = image;
             if (!approval.skipped) payload.managerPin = approval.managerPin;
             const res = await fetch(`${API_BASE_URL}/products`, {
                 method: "POST",
@@ -2388,16 +2481,19 @@ window.saveNewInventory = async function() {
     if (!savedOnCloud) {
         // Check if the product already exists locally
         let perfume = PERFUMES.find(p => p.name.toLowerCase() === name.toLowerCase() && p.brand.toLowerCase() === brand.toLowerCase());
+        const offlineBatch = {
+            id: "b_" + Date.now(),
+            variantId: newVariant.id,
+            batchNo: batchNo,
+            mfgDate: new Date().toISOString().split("T")[0],
+            expDate: expiry,
+            cost: cost,
+            qty: qty
+        };
         if (perfume) {
             perfume.variants.push(newVariant);
-            perfume.batches.unshift({
-                id: "b_" + Date.now(),
-                batchNo: batchNo,
-                mfgDate: new Date().toISOString().split("T")[0],
-                expDate: expiry,
-                cost: cost,
-                qty: qty
-            });
+            perfume.batches.unshift(offlineBatch);
+            if (image) perfume.image = image;
         } else {
             const newProduct = {
                 id: "p_" + Date.now(),
@@ -2406,19 +2502,10 @@ window.saveNewInventory = async function() {
                 family: family,
                 gender: "Unisex",
                 notes: notes,
-                image: "assets/images/oud.png",
+                image: image || "assets/images/oud.png",
                 description: `${name} by ${brand}. A premium ${family} fragrance.`,
                 variants: [newVariant],
-                batches: [
-                    {
-                        id: "b_" + Date.now(),
-                        batchNo: batchNo,
-                        mfgDate: new Date().toISOString().split("T")[0],
-                        expDate: expiry,
-                        cost: cost,
-                        qty: qty
-                    }
-                ]
+                batches: [offlineBatch]
             };
             PERFUMES.push(newProduct);
         }
