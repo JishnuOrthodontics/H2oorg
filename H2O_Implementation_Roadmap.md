@@ -72,10 +72,10 @@ Goal: the demo becomes a real, deployable system without changing its feature se
 - ✅ Server-side Tally Sales voucher XML (`POST/GET /api/integrations/tally/export`); `ledger_exports` audit log; marks `tally_exported_at`.
 - ✅ Optional auto-push when `TALLY_HTTP_URL` (+ optional `TALLY_HTTP_TOKEN`) is set; cron via `X-Cron-Secret` or Manager JWT.
 - ✅ Optional Zoho Books invoice sync (`POST /api/integrations/zoho/sync`) when `ZOHO_*` env is set; otherwise skipped.
-- ✅ Phone owner dashboard: `frontend/owner.html` → `GET /api/owner/dashboard` (Manager/Owner JWT; today’s sales, staff commission, low/dead stock).
+- ✅ Owner Live inside Staff POS (Manager/Owner sidebar tab) → `GET /api/owner/dashboard` (today’s sales, staff commission, low/dead stock). Not exposed on the public landing nav; `owner.html` redirects into POS login.
 
 **Exit criteria:** daily sales land in the accounting ledger without manual file handling; owner checks the shop from home on a phone.
-**Status:** ✅ Code complete — set `TALLY_HTTP_URL` (and/or Zoho keys) on Render for hands-off push; open `https://www.h2oorg.com/owner.html` on a phone with Manager login.
+**Status:** ✅ Code complete — set `TALLY_HTTP_URL` (and/or Zoho keys) on Render for hands-off push; open Staff POS as Manager → **Owner Live**.
 
 ---
 

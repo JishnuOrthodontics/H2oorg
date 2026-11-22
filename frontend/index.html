@@ -27,7 +27,6 @@
                     <a href="#collections">Collections</a>
                     <a href="#scent-finder">Scent Finder</a>
                     <a href="#experience">Our Experience</a>
-                    <a href="owner.html" class="btn btn-outline" style="padding: 0.5rem 1.2rem; font-size: 0.75rem;">Owner</a>
                     <a href="#" class="btn btn-outline" id="btn-pos-portal" style="padding: 0.5rem 1.2rem; font-size: 0.75rem;">Staff POS Portal</a>
                 </nav>
             </div>
@@ -310,6 +309,11 @@
                     <li>
                         <a href="#" class="pos-menu-item" data-tab="pos-reports">
                             <i class="fas fa-chart-line"></i> Daily Sales & GST
+                        </a>
+                    </li>
+                    <li>
+                        <a href="#" class="pos-menu-item locked" data-tab="pos-owner" id="pos-menu-owner">
+                            <i class="fas fa-mobile-screen-button"></i> Owner Live
                         </a>
                     </li>
                 </ul>
@@ -643,6 +647,55 @@
                                     <!-- Loaded by JS -->
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                    <!-- TAB 5: Owner Live (Manager / Owner only) -->
+                    <div class="pos-tab-content" id="pos-owner">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.25rem; flex-wrap:wrap; gap:0.75rem;">
+                            <div>
+                                <h3 class="font-serif" style="color:var(--primary-gold); margin:0 0 0.25rem;">Owner Live</h3>
+                                <p style="margin:0; color:var(--text-secondary); font-size:0.85rem;">Read-only today snapshot — same data as the phone owner view.</p>
+                            </div>
+                            <button class="btn btn-gold" style="font-size:0.8rem; padding:0.5rem 1.2rem;" onclick="renderOwnerDashboard()">
+                                <i class="fas fa-sync-alt" style="margin-right:0.4rem;"></i> Refresh
+                            </button>
+                        </div>
+                        <p id="owner-dash-error" style="display:none; color:#f87171; font-size:0.85rem; margin-bottom:1rem;"></p>
+                        <p id="owner-dash-updated" style="font-size:0.75rem; color:var(--text-muted); margin-bottom:1rem;"></p>
+
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:0.75rem; margin-bottom:1.5rem;">
+                            <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1rem;">
+                                <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.35rem;">GROSS SALES</div>
+                                <div id="owner-kpi-sales" style="font-size:1.25rem; font-weight:600;">—</div>
+                            </div>
+                            <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1rem;">
+                                <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.35rem;">TAX (CGST+SGST)</div>
+                                <div id="owner-kpi-tax" style="font-size:1.25rem; font-weight:600;">—</div>
+                            </div>
+                            <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1rem;">
+                                <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.35rem;">TICKETS</div>
+                                <div id="owner-kpi-tx" style="font-size:1.25rem; font-weight:600;">—</div>
+                            </div>
+                            <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1rem;">
+                                <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.35rem;">STAFF COMMISSION</div>
+                                <div id="owner-kpi-comm" style="font-size:1.25rem; font-weight:600;">—</div>
+                            </div>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem;">
+                            <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1.25rem;">
+                                <h4 style="font-size:0.85rem; margin:0 0 0.75rem; color:var(--primary-gold);">By staff</h4>
+                                <div id="owner-by-employee"></div>
+                            </div>
+                            <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1.25rem;">
+                                <h4 style="font-size:0.85rem; margin:0 0 0.75rem; color:var(--primary-gold);">Low stock (&lt; 10)</h4>
+                                <div id="owner-low-stock"></div>
+                            </div>
+                            <div style="background:#0c0c0e; border:1px solid var(--border-color); border-radius:8px; padding:1.25rem;">
+                                <h4 style="font-size:0.85rem; margin:0 0 0.75rem; color:var(--primary-gold);">Dead stock (30d+)</h4>
+                                <div id="owner-dead-stock"></div>
+                            </div>
                         </div>
                     </div>
 

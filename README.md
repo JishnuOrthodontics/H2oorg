@@ -103,12 +103,11 @@ Never commit `.env`. Production secrets live in the Render dashboard.
 
 - **Tally:** Reports → Export builds XML on the API (`POST /api/integrations/tally/export`). Cron yesterday’s sales with `X-Cron-Secret`. Set `TALLY_HTTP_URL` to push; otherwise download XML from the modal.
 - **Zoho (optional):** `POST /api/integrations/zoho/sync` when all `ZOHO_*` vars are set.
-- **Owner phone UI:** https://www.h2oorg.com/owner.html — Manager login, read-only today’s KPIs / low & dead stock (`GET /api/owner/dashboard`).
+- **Owner Live:** inside Staff POS (Manager/Owner login) → sidebar **Owner Live** tab — read-only today’s KPIs / low & dead stock (`GET /api/owner/dashboard`). Not linked from the public landing page.
 
 ## Production
 
 - **Site:** https://www.h2oorg.com  
-- **Owner dashboard:** https://www.h2oorg.com/owner.html  
 - **API:** https://h2o-pos-api.onrender.com/api  
 - **Health:** https://h2o-pos-api.onrender.com/health  
 

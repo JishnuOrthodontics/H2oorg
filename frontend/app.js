@@ -500,14 +500,18 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }
 
-        const reportsTabBtn = document.querySelector(".pos-menu-item[data-tab='pos-reports']");
-        if (reportsTabBtn && authenticatedUser) {
-            if (authenticatedUser.role === "Cashier" || authenticatedUser.role === "Sales Associate") {
-                reportsTabBtn.classList.add("locked");
+        const managerOnlyTabs = [
+            document.querySelector(".pos-menu-item[data-tab='pos-reports']"),
+            document.querySelector(".pos-menu-item[data-tab='pos-owner']")
+        ];
+        managerOnlyTabs.forEach((tabBtn) => {
+            if (!tabBtn || !authenticatedUser) return;
+            if (isManagerUser(authenticatedUser)) {
+                tabBtn.classList.remove("locked");
             } else {
-                reportsTabBtn.classList.remove("locked");
+                tabBtn.classList.add("locked");
             }
-        }
+        });
     }
 
     // Close modals on clicking the blurred background outside the content box
@@ -846,6 +850,17 @@ function setupPosNavigation() {
             if (tabId === "pos-inventory") renderPosInventory();
             if (tabId === "pos-crm") renderPosCRM();
             if (tabId === "pos-reports") renderPosReports();
+            if (tabId === "pos-owner") renderOwnerDashboard();
+
+            const titleMap = {
+                "pos-billing": "Checkout Terminal",
+                "pos-inventory": "Inventory & Batches",
+                "pos-crm": "CRM Scent Profiles",
+                "pos-reports": "Daily Sales & GST",
+                "pos-owner": "Owner Live"
+            };
+            const titleEl = document.getElementById("pos-active-tab-title");
+            if (titleEl && titleMap[tabId]) titleEl.textContent = titleMap[tabId];
         });
     });
 
@@ -1708,6 +1723,89 @@ window.loadTopPerformers = async function() {
         });
     } catch (e) {
         body.innerHTML = `<tr><td colspan="3" style="color:var(--text-muted);">Could not load top performers.</td></tr>`;
+    }
+};
+
+function formatOwnerInr(n) {
+    return "₹" + Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+}
+
+function fillOwnerList(el, rows, mapFn, empty) {
+    if (!el) return;
+    if (!rows || !rows.length) {
+        el.innerHTML = `<p style="color:var(--text-muted); font-size:0.85rem; margin:0;">${empty}</p>`;
+        return;
+    }
+    el.innerHTML = rows.map(mapFn).join("");
+}
+
+window.renderOwnerDashboard = async function() {
+    const errEl = document.getElementById("owner-dash-error");
+    if (errEl) {
+        errEl.style.display = "none";
+        errEl.textContent = "";
+    }
+    if (!isManagerUser(authenticatedUser)) {
+        if (errEl) {
+            errEl.style.display = "block";
+            errEl.textContent = "Manager / Owner login required.";
+        }
+        return;
+    }
+    if (!useBackend || !localStorage.getItem("h2o_pos_token")) {
+        if (errEl) {
+            errEl.style.display = "block";
+            errEl.textContent = "Cloud API login required for Owner Live.";
+        }
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE_URL}/owner/dashboard`, { headers: getAuthHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to load owner dashboard");
+
+        const s = data.summary || {};
+        const set = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = val;
+        };
+        set("owner-kpi-sales", formatOwnerInr(s.gross_sales));
+        set("owner-kpi-tax", formatOwnerInr(s.total_tax));
+        set("owner-kpi-tx", String(s.tx_count || 0));
+        set("owner-kpi-comm", formatOwnerInr(s.commission));
+        const updated = document.getElementById("owner-dash-updated");
+        if (updated) {
+            updated.textContent = data.generatedAt
+                ? `Updated ${new Date(data.generatedAt).toLocaleString("en-IN")}`
+                : "";
+        }
+
+        const rowHtml = (left, right) =>
+            `<div style="display:flex;justify-content:space-between;gap:0.75rem;padding:0.45rem 0;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.85rem;"><span>${left}</span><span>${right}</span></div>`;
+
+        fillOwnerList(
+            document.getElementById("owner-by-employee"),
+            data.byEmployee,
+            (r) => rowHtml(r.name, `${formatOwnerInr(r.sales)} · ${r.tx_count} tx · comm ${formatOwnerInr(r.commission)}`),
+            "No paid sales yet today."
+        );
+        fillOwnerList(
+            document.getElementById("owner-low-stock"),
+            data.lowStock,
+            (r) => rowHtml(`${r.perfume} <span style="color:var(--text-muted);font-size:0.75rem;">${r.size || ""} ${r.sku || ""}</span>`, String(r.qty)),
+            "No low-stock SKUs."
+        );
+        fillOwnerList(
+            document.getElementById("owner-dead-stock"),
+            data.deadStock,
+            (r) => rowHtml(`${r.perfume} <span style="color:var(--text-muted);font-size:0.75rem;">${r.size || ""}</span>`, `${r.qty} · ${r.batch_age_days || "?"}d`),
+            "No dead stock flagged."
+        );
+    } catch (e) {
+        if (errEl) {
+            errEl.style.display = "block";
+            errEl.textContent = e.message || "Could not load owner dashboard.";
+        }
     }
 };
 
