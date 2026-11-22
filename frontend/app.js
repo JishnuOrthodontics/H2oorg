@@ -223,7 +223,20 @@ let _managerPinResolver = null;
 function isManagerUser(user) {
     if (!user || !user.role) return false;
     const r = String(user.role).toLowerCase();
-    return r === "manager" || r.includes("owner");
+    return r === "manager" || r.includes("manager") || r.includes("owner");
+}
+
+function applyManagerTabLocks() {
+    const managerOnlyTabs = [
+        document.querySelector(".pos-menu-item[data-tab='pos-reports']"),
+        document.querySelector(".pos-menu-item[data-tab='pos-owner']")
+    ];
+    const allow = isManagerUser(authenticatedUser);
+    managerOnlyTabs.forEach((tabBtn) => {
+        if (!tabBtn) return;
+        if (allow) tabBtn.classList.remove("locked");
+        else tabBtn.classList.add("locked");
+    });
 }
 
 function promptManagerPin(reasonText) {
@@ -500,18 +513,7 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }
 
-        const managerOnlyTabs = [
-            document.querySelector(".pos-menu-item[data-tab='pos-reports']"),
-            document.querySelector(".pos-menu-item[data-tab='pos-owner']")
-        ];
-        managerOnlyTabs.forEach((tabBtn) => {
-            if (!tabBtn || !authenticatedUser) return;
-            if (isManagerUser(authenticatedUser)) {
-                tabBtn.classList.remove("locked");
-            } else {
-                tabBtn.classList.add("locked");
-            }
-        });
+        applyManagerTabLocks();
     }
 
     // Close modals on clicking the blurred background outside the content box
@@ -813,6 +815,7 @@ function addToCartState(perfume, variant) {
 let activePosTab = "pos-billing";
 
 function initPosTerminal() {
+    applyManagerTabLocks();
     setupPosNavigation();
     renderPosProducts();
     renderPosCart();
@@ -828,14 +831,20 @@ function setupPosNavigation() {
         item.addEventListener("click", (e) => {
             e.preventDefault();
 
-            // Check if tab is locked (RBAC check)
-            if (item.classList.contains("locked")) {
+            const tabId = item.dataset.tab;
+            if (!tabId) return;
+
+            // Manager-only tabs: trust role, not a stale CSS lock class
+            const managerOnly = tabId === "pos-reports" || tabId === "pos-owner";
+            if (managerOnly && !isManagerUser(authenticatedUser)) {
                 alert(`Access Denied: ${authenticatedUser.name} is logged in as a ${authenticatedUser.role}.\n\nThis tab requires Manager or Owner privileges.`);
                 return;
             }
-
-            const tabId = item.dataset.tab;
-            if (!tabId) return;
+            if (managerOnly) item.classList.remove("locked");
+            else if (item.classList.contains("locked")) {
+                alert(`Access Denied: ${authenticatedUser.name} is logged in as a ${authenticatedUser.role}.\n\nThis tab requires Manager or Owner privileges.`);
+                return;
+            }
 
             menuItems.forEach(i => i.classList.remove("active"));
             item.classList.add("active");
