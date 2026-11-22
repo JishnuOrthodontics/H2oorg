@@ -1,6 +1,6 @@
 # H2O Perfume Retail POS
 
-Point-of-sale for H2O perfume retail: checkout, inventory, customers, and basic reporting.
+Point-of-sale for H2O perfume retail: storefront catalog, staff checkout, inventory, CRM, reporting, and ledger export.
 
 | Layer | Host |
 | --- | --- |
@@ -16,15 +16,25 @@ Repo: [JishnuOrthodontics/H2oorg](https://github.com/JishnuOrthodontics/H2oorg)
 - **Frontend:** static HTML/CSS/JS (`frontend/`)
 - **Backend:** Node.js + Express (`backend/`)
 - **DB:** PostgreSQL via `pg` (Supabase; use the Session pooler URI for IPv4)
-- **Auth:** JWT (`JWT_SECRET`)
+- **Auth:** JWT (`JWT_SECRET`) + Manager PIN overrides for cashiers
 - **PII:** customer phone/email encrypted at rest (AES-256-GCM, `PII_ENCRYPTION_KEY`)
 - **Payments:** Razorpay Orders + Checkout.js + webhook (`payment.captured`)
+
+## Features
+
+- **Public storefront:** scent finder, collections catalog (synced from API). Landing **Buy** still opens the staff POS simulation — not a customer web checkout.
+- **Staff POS:** login via Staff POS Portal (seeded manager: `jishnu` / `9999`). Checkout, barcode search, cash / Razorpay / split tender, loyalty redeem (100 pts = ₹100).
+- **Inventory:** batches per variant; restock; **Add Product** with compressed **catalog image upload** (optional; default bottle image otherwise).
+- **CRM:** scent profiles, birthday/anniversary, Twilio SMS outbox (or logged if keys unset).
+- **Reports:** daily sales/GST, top performers, dead stock, Tally XML export.
+- **Owner Live:** Manager/Owner-only sidebar tab — today’s KPIs, staff commission, low/dead stock. Not on the public nav (`owner.html` redirects into POS login).
+- **Ledger:** server Tally voucher XML (+ optional `TALLY_HTTP_URL` push); optional Zoho Books sync.
 
 ## Repo layout
 
 ```
-frontend/          POS UI + local static server
-backend/           Express API, seed, payments, PII helpers
+frontend/          Storefront + Staff POS UI + local static server
+backend/           Express API, seed, migrations, payments, integrations
 render.yaml        Render Blueprint for h2o-pos-api
 H2O_Implementation_Roadmap.md
 ```
@@ -37,14 +47,14 @@ H2O_Implementation_Roadmap.md
 cd backend
 cp .env.example .env
 # Fill DATABASE_URL, JWT_SECRET, PII_ENCRYPTION_KEY, FRONTEND_ORIGIN
-# Optional for digital pay: RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET
+# Optional: RAZORPAY_*, TWILIO_*, TALLY_*, ZOHO_*, CRON_SECRET
 npm install
 npm run db:migrate-payments   # idempotent; also runs on server start
 # npm run db:seed             # only for empty DBs (drops tables)
 npm run dev
 ```
 
-API: `http://localhost:5000` · health: `GET /health` (includes `razorpay: configured|not_configured`)
+API: `http://localhost:5000` · health: `GET /health` (shows `razorpay` / `twilio` / `zoho` / `tallyHttp` status)
 
 ### 2. Frontend
 
@@ -55,7 +65,7 @@ node server.js
 
 Open `http://localhost:8080`. On localhost, `config.js` points at `http://localhost:5000/api`.
 
-**Checkout:** Cash Pay (full total) or **Pay (Card / UPI)** via Razorpay. Optional split: enter cash amount → remainder charged on Razorpay. Barcode scanners: focus search, scan, Enter.
+**Checkout:** Cash Pay (full total) or **Pay (Card / UPI)** via Razorpay. Optional split: enter cash amount → remainder on Razorpay. Barcode: focus search, scan, Enter.
 
 ## Environment
 
@@ -71,7 +81,7 @@ See `.env.example` / `backend/.env.example`.
 | `RAZORPAY_KEY_SECRET` | Razorpay Key Secret |
 | `RAZORPAY_WEBHOOK_SECRET` | Webhook signing secret |
 | `TWILIO_ACCOUNT_SID` / `AUTH_TOKEN` / `FROM` | Optional SMS (else outbox `logged`) |
-| `CRON_SECRET` | Auth for birthday-offers + Tally/Zoho cron jobs (`X-Cron-Secret`) |
+| `CRON_SECRET` | Auth for birthday-offers + Tally/Zoho cron (`X-Cron-Secret`) |
 | `TALLY_HTTP_URL` / `TALLY_HTTP_TOKEN` | Optional Tally HTTP import push |
 | `ZOHO_CLIENT_ID` / `SECRET` / `REFRESH_TOKEN` / `ORG_ID` | Optional Zoho Books sync |
 | `PORT` | API port (default `5000`) |
@@ -99,11 +109,16 @@ Never commit `.env`. Production secrets live in the Render dashboard.
 - Loyalty: Silver (&lt;500) / Gold (500–1499) / Platinum (≥1500); redeem **100 pts = ₹100** at checkout.
 - Twilio: set `TWILIO_*` on Render. Cron: `POST /api/crm/birthday-offers/run` with header `X-Cron-Secret: $CRON_SECRET` (or Manager JWT).
 
-### Ledger & owner phone (Phase 4)
+### Ledger & Owner Live (Phase 4)
 
 - **Tally:** Reports → Export builds XML on the API (`POST /api/integrations/tally/export`). Cron yesterday’s sales with `X-Cron-Secret`. Set `TALLY_HTTP_URL` to push; otherwise download XML from the modal.
 - **Zoho (optional):** `POST /api/integrations/zoho/sync` when all `ZOHO_*` vars are set.
-- **Owner Live:** inside Staff POS (Manager/Owner login) → sidebar **Owner Live** tab — read-only today’s KPIs / low & dead stock (`GET /api/owner/dashboard`). Not linked from the public landing page.
+- **Owner Live:** Staff POS → Manager/Owner → sidebar **Owner Live** (`GET /api/owner/dashboard`).
+
+### Inventory & catalog images
+
+- Stock is tracked **per variant** (size/SKU); inventory table shows batch/qty/expiry for that variant.
+- **Add Product** accepts an optional photo upload (JPEG/PNG/WebP/GIF). The browser compresses it; the API stores it on `perfumes.image` (TEXT). Omit the photo to keep the default bottle image.
 
 ## Production
 
@@ -111,7 +126,7 @@ Never commit `.env`. Production secrets live in the Render dashboard.
 - **API:** https://h2o-pos-api.onrender.com/api  
 - **Health:** https://h2o-pos-api.onrender.com/health  
 
-Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the `h2o-pos` Blueprint.
+Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the Blueprint. Frontend updates via Cloudflare when `frontend/` lands on `main`.
 
 ## Scripts (`backend/`)
 
@@ -124,8 +139,8 @@ Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the `
 | `npm run db:migrate-payments` | Add payment columns / `payment_orders` / `payment_splits` |
 | `npm run db:migrate-phase2` | employee_id, void fields, `shift_logs`, `audit_overrides` |
 | `npm run db:migrate-phase3` | birthday/anniversary, `loyalty_redemptions`, `message_outbox` |
-| `npm run db:migrate-phase4` | `ledger_exports`, `tally_exported_at` / `zoho_exported_at` |
+| `npm run db:migrate-phase4` | `ledger_exports`, export timestamps, `perfumes.image` → TEXT |
 
 ## Roadmap
 
-Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0–4** complete in code. Add Razorpay / Twilio / optional Tally HTTP or Zoho keys on Render when ready.
+Phased work is tracked in [`H2O_Implementation_Roadmap.md`](./H2O_Implementation_Roadmap.md). **Phase 0–4** complete in code. Phase 5 (offline queue, Shopify, multi-store) is deferred. Add Razorpay / Twilio / optional Tally HTTP or Zoho keys on Render when ready for live use.
