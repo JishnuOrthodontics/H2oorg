@@ -5,82 +5,96 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Razorpay Payments | H2O — HARIESH AND HELDIN ORGANIZATION</title>
     <meta name="description" content="How H2O processes card and UPI payments securely via Razorpay.">
-    <link rel="icon" href="assets/images/h2o-logo.svg" type="image/svg+xml">
+    <link rel="icon" href="/assets/images/h2o-logo.svg" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="/style.css?v=legal-ui-2">
 </head>
-<body>
+<body class="legal-body">
     <header class="scrolled">
         <div class="nav-container">
-            <a href="index.html" class="logo" aria-label="H2O"><img class="logo-mark" src="assets/images/h2o-logo.svg" alt="H2O logo"></a>
+            <a href="/index.html" class="logo" aria-label="H2O">
+                <img class="logo-mark" src="/assets/images/h2o-logo.svg" alt="H2O logo">
+            </a>
             <nav class="nav-links">
-                <a href="index.html#collections">Collections</a>
-                <a href="catalog.html">Catalog</a>
-                <a href="index.html#experience">Visit Us</a>
-                <a href="index.html?pos=true" class="btn btn-outline" style="padding: 0.5rem 1.2rem; font-size: 0.75rem;">Staff POS Portal</a>
+                <a href="/index.html#collections">Collections</a>
+                <a href="/catalog.html">Catalog</a>
+                <a href="/index.html#experience">Visit Us</a>
+                <a href="/index.html?pos=true" class="btn btn-outline" style="padding: 0.5rem 1.2rem; font-size: 0.75rem;">Staff POS Portal</a>
             </nav>
         </div>
     </header>
 
-    <main class="legal-page">
-        <h1>Razorpay Payments</h1>
-        <p class="legal-meta">Last updated: 24 November 2026 · Secure digital payments for HARIESH AND HELDIN ORGANIZATION (H2O)</p>
+    <main class="legal-shell">
+        <div class="legal-container">
+            <nav class="legal-tabs" aria-label="Legal pages">
+                <a href="/terms.html">Terms</a>
+                <a href="/privacy.html">Privacy</a>
+                <a href="/payments.html" class="active">Payments</a>
+                <a href="/gst.html">GST</a>
+                <a href="/index.html">Home</a>
+            </nav>
 
-        <div class="legal-note">
-            H2O uses <strong>Razorpay</strong>, a RBI-authorised payment aggregator, for card, UPI, and other digital methods enabled on our merchant account. We do not store your full card number or UPI PIN on our servers.
+            <article class="legal-document">
+                <h1>Razorpay Payments</h1>
+                <p class="legal-meta">Last updated: 24 November 2026 · Secure digital payments for HARIESH AND HELDIN ORGANIZATION (H2O)</p>
+
+                <div class="legal-note">
+                    H2O uses <strong>Razorpay</strong>, a RBI-authorised payment aggregator, for card, UPI, and other digital methods enabled on our merchant account. We do not store your full card number or UPI PIN on our servers.
+                </div>
+
+                <h2>1. Merchant</h2>
+                <p>Payments are collected by <strong>HARIESH AND HELDIN ORGANIZATION (H2O)</strong>, Chendamangalam, Ernakulam, Kerala. Support: <a href="mailto:h2organization2025@gmail.com">h2organization2025@gmail.com</a> · <a href="tel:+917907349501">+91 79073 49501</a>.</p>
+
+                <h2>2. How checkout works</h2>
+                <ul>
+                    <li>At the store POS, staff may offer <strong>Cash</strong>, <strong>Card/UPI via Razorpay</strong>, or a <strong>split</strong> (part cash + part Razorpay).</li>
+                    <li>For Razorpay, our system creates a payment order; you complete payment in Razorpay’s secure Checkout.</li>
+                    <li>On success, payment is verified by cryptographic signature and/or Razorpay webhooks before the sale is marked paid and stock/loyalty are updated.</li>
+                </ul>
+
+                <h2>3. Security</h2>
+                <ul>
+                    <li>Card and UPI credentials are entered only on Razorpay-controlled pages/SDKs.</li>
+                    <li>Our API stores order and payment reference IDs needed for reconciliation and refunds — not CVV or full PAN.</li>
+                    <li>Website and API traffic use HTTPS.</li>
+                </ul>
+
+                <h2>4. Failed, cancelled, or duplicate payments</h2>
+                <ul>
+                    <li>If you cancel Checkout or a payment fails, no sale is completed for that attempt.</li>
+                    <li>If amount is debited but the bill is not generated (network drop), contact us with the UPI/bank reference or Razorpay payment ID. We will reconcile against Razorpay and refund or complete the invoice as appropriate.</li>
+                    <li>Refunds, where due, are initiated to the original payment method per Razorpay and bank timelines.</li>
+                </ul>
+
+                <h2>5. Fees &amp; settlements</h2>
+                <p>Razorpay charges merchant fees under our commercial agreement with them. Customers pay the invoice total shown (GST-inclusive pricing as displayed). Settlements to our bank account follow Razorpay’s settlement cycle.</p>
+
+                <h2>6. Third-party terms</h2>
+                <p>Use of Razorpay is also subject to Razorpay’s own terms and privacy notices:</p>
+                <ul>
+                    <li><a href="https://razorpay.com/terms/" target="_blank" rel="noopener">Razorpay Terms</a></li>
+                    <li><a href="https://razorpay.com/privacy/" target="_blank" rel="noopener">Razorpay Privacy Policy</a></li>
+                </ul>
+
+                <h2>7. Related policies</h2>
+                <p>See also our <a href="/terms.html">Terms of Service</a>, <a href="/privacy.html">Privacy Policy</a>, and <a href="/gst.html">GST Compliance</a> pages.</p>
+
+                <nav class="legal-nav">
+                    <a href="/terms.html">Terms of Service</a>
+                    <a href="/privacy.html">Privacy Policy</a>
+                    <a href="/payments.html" class="active">Razorpay Payments</a>
+                    <a href="/gst.html">GST Compliance</a>
+                    <a href="/index.html">Home</a>
+                </nav>
+            </article>
         </div>
-
-        <h2>1. Merchant</h2>
-        <p>Payments are collected by <strong>HARIESH AND HELDIN ORGANIZATION (H2O)</strong>, Chendamangalam, Ernakulam, Kerala. Support: <a href="mailto:h2organization2025@gmail.com">h2organization2025@gmail.com</a> · <a href="tel:+917907349501">+91 79073 49501</a>.</p>
-
-        <h2>2. How checkout works</h2>
-        <ul>
-            <li>At the store POS, staff may offer <strong>Cash</strong>, <strong>Card/UPI via Razorpay</strong>, or a <strong>split</strong> (part cash + part Razorpay).</li>
-            <li>For Razorpay, our system creates a payment order; you complete payment in Razorpay’s secure Checkout.</li>
-            <li>On success, payment is verified by cryptographic signature and/or Razorpay webhooks before the sale is marked paid and stock/loyalty are updated.</li>
-        </ul>
-
-        <h2>3. Security</h2>
-        <ul>
-            <li>Card and UPI credentials are entered only on Razorpay-controlled pages/SDKs.</li>
-            <li>Our API stores order and payment reference IDs needed for reconciliation and refunds — not CVV or full PAN.</li>
-            <li>Website and API traffic use HTTPS.</li>
-        </ul>
-
-        <h2>4. Failed, cancelled, or duplicate payments</h2>
-        <ul>
-            <li>If you cancel Checkout or a payment fails, no sale is completed for that attempt.</li>
-            <li>If amount is debited but the bill is not generated (network drop), contact us with the UPI/bank reference or Razorpay payment ID. We will reconcile against Razorpay and refund or complete the invoice as appropriate.</li>
-            <li>Refunds, where due, are initiated to the original payment method per Razorpay and bank timelines.</li>
-        </ul>
-
-        <h2>5. Fees &amp; settlements</h2>
-        <p>Razorpay charges merchant fees under our commercial agreement with them. Customers pay the invoice total shown (GST-inclusive pricing as displayed). Settlements to our bank account follow Razorpay’s settlement cycle.</p>
-
-        <h2>6. Third-party terms</h2>
-        <p>Use of Razorpay is also subject to Razorpay’s own terms and privacy notices:</p>
-        <ul>
-            <li><a href="https://razorpay.com/terms/" target="_blank" rel="noopener">Razorpay Terms</a></li>
-            <li><a href="https://razorpay.com/privacy/" target="_blank" rel="noopener">Razorpay Privacy Policy</a></li>
-        </ul>
-
-        <h2>7. Related policies</h2>
-        <p>See also our <a href="terms.html">Terms of Service</a>, <a href="privacy.html">Privacy Policy</a>, and <a href="gst.html">GST Compliance</a> pages.</p>
-
-        <nav class="legal-nav">
-            <a href="terms.html">Terms of Service</a>
-            <a href="privacy.html">Privacy Policy</a>
-            <a href="payments.html" class="active">Razorpay Payments</a>
-            <a href="gst.html">GST Compliance</a>
-            <a href="index.html">Home</a>
-        </nav>
     </main>
 
-    <footer>
-        <div class="footer-bottom" style="max-width:1200px;margin:0 auto;padding:1.5rem 2rem;">
+    <footer class="legal-footer">
+        <div class="footer-bottom">
             <p>&copy; 2026 HARIESH AND HELDIN ORGANIZATION (H2O). All rights reserved.</p>
             <div>
                 <a href="mailto:h2organization2025@gmail.com">Email</a>
