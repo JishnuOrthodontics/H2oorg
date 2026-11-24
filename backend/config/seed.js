@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const { pool } = require('./db');
 const { validateEnv } = require('./env');
 const { encrypt } = require('./crypto');
@@ -21,14 +22,20 @@ DROP TABLE IF EXISTS perfumes CASCADE;
 DROP TABLE IF EXISTS customers CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 
--- 1. Users (Staff) Table
+-- 1. Users (Staff) Table — login via Firebase Google (email allowlist)
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
-    pin VARCHAR(10) NOT NULL,
+    pin VARCHAR(10),
+    email VARCHAR(255) UNIQUE,
+    firebase_uid VARCHAR(128) UNIQUE,
+    override_pin_hash VARCHAR(255),
+    is_active BOOLEAN NOT NULL DEFAULT true,
     name VARCHAR(100) NOT NULL,
     role VARCHAR(50) NOT NULL DEFAULT 'Cashier'
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email));
 
 -- 2. Customers Table (phone/email stored encrypted — TEXT holds ciphertext)
 CREATE TABLE customers (
@@ -204,12 +211,21 @@ const seedData = async () => {
     await client.query(schema);
     console.log("✅ Schema created successfully.");
 
-    console.log("⏳ Seeding staff users...");
-    await client.query(`
-      INSERT INTO users (username, pin, name, role) VALUES 
-      ('siddharth', '1234', 'Siddharth M.', 'Cashier'),
-      ('jishnu', '9999', 'Dr. Jishnu Sen', 'Manager');
-    `);
+    console.log("⏳ Seeding staff users (Google email allowlist)...");
+    const emailJishnu = (process.env.STAFF_EMAIL_JISHNU || 'h2organization2025@gmail.com').trim().toLowerCase();
+    const emailSiddharth = (process.env.STAFF_EMAIL_SIDDHARTH || '').trim().toLowerCase() || null;
+    const overridePin = String(process.env.MANAGER_OVERRIDE_PIN || '9999').trim();
+    const overrideHash = await bcrypt.hash(overridePin, 12);
+
+    await client.query(
+      `INSERT INTO users (username, name, role, email, override_pin_hash, is_active) VALUES
+       ('siddharth', 'Siddharth M.', 'Cashier', $1, NULL, true),
+       ('jishnu', 'Dr. Jishnu Sen', 'Manager', $2, $3, true)`,
+      [emailSiddharth, emailJishnu, overrideHash]
+    );
+    console.log(`   Manager email: ${emailJishnu}`);
+    if (emailSiddharth) console.log(`   Cashier email: ${emailSiddharth}`);
+    else console.log('   Cashier email: (unset — set STAFF_EMAIL_SIDDHARTH or UPDATE users)');
 
     console.log("⏳ Seeding customers (PII encrypted at rest)...");
     const seedCustomers = [

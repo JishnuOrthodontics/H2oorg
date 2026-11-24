@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const db = require('../config/db');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -22,7 +23,7 @@ function isManagerRole(role) {
 }
 
 /**
- * Resolve a Manager/Owner by PIN (any matching manager account).
+ * Resolve a Manager/Owner by override PIN (bcrypt hash compare).
  */
 async function assertManagerPin(pin) {
     if (!pin || !String(pin).trim()) {
@@ -31,21 +32,25 @@ async function assertManagerPin(pin) {
         throw err;
     }
     const result = await db.query(
-        `SELECT id, username, name, role FROM users
-         WHERE pin = $1 AND (
-           LOWER(role) = 'manager'
-           OR LOWER(role) LIKE '%owner%'
-           OR LOWER(name) LIKE '%owner%'
-         )
-         LIMIT 1`,
-        [String(pin).trim()]
+        `SELECT id, username, name, role, override_pin_hash FROM users
+         WHERE is_active = true
+           AND override_pin_hash IS NOT NULL
+           AND (
+             LOWER(role) = 'manager'
+             OR LOWER(role) LIKE '%owner%'
+             OR LOWER(name) LIKE '%owner%'
+           )`
     );
-    if (result.rows.length === 0) {
-        const err = new Error('Invalid manager PIN');
-        err.status = 403;
-        throw err;
+    const candidate = String(pin).trim();
+    for (const row of result.rows) {
+        const ok = await bcrypt.compare(candidate, row.override_pin_hash);
+        if (ok) {
+            return { id: row.id, username: row.username, name: row.name, role: row.role };
+        }
     }
-    return result.rows[0];
+    const err = new Error('Invalid manager PIN');
+    err.status = 403;
+    throw err;
 }
 
 /**

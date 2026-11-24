@@ -1,4 +1,6 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+const bcrypt = require('bcryptjs');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const db = require('../config/db');
@@ -7,6 +9,7 @@ const { finalizeSale } = require('../services/sales');
 const { voidSale } = require('../services/voidSale');
 const { loyaltyTier } = require('../services/loyalty');
 const { enqueueSms, processOutbox, isTwilioConfigured, isMsg91Configured, smsProvider } = require('../services/messaging');
+const { verifyIdToken, isFirebaseConfigured } = require('../config/firebase');
 const {
     authenticateToken,
     isManagerRole,
@@ -16,7 +19,36 @@ const {
     JWT_SECRET
 } = require('../middleware/auth');
 
+function requireOwner(req, res) {
+    if (!isManagerRole(req.user && req.user.role)) {
+        res.status(403).json({ error: 'Owner / Manager only — staff accounts are managed by the owner' });
+        return false;
+    }
+    return true;
+}
+
+function normalizeStaffEmail(email) {
+    return String(email || '').trim().toLowerCase();
+}
+
+function slugUsername(nameOrEmail) {
+    const base = String(nameOrEmail || 'staff')
+        .split('@')[0]
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '')
+        .slice(0, 40);
+    return base || 'staff';
+}
+
 const COMMISSION_RATE = 0.05;
+
+const firebaseLoginLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many login attempts. Try again in a minute.' }
+});
 
 function formatCustomer(r) {
     let phone = r.phone;
@@ -59,25 +91,51 @@ function occasionWithinDays(dateVal, days) {
     return false;
 }
 
-// --- STAFF LOGIN ---
-router.post('/auth/login', async (req, res) => {
-    const { username, pin } = req.body;
+// --- STAFF LOGIN (PIN deprecated — use Google / Firebase) ---
+router.post('/auth/login', (_req, res) => {
+    res.status(410).json({
+        error: 'PIN login has been removed. Use Google Sign-In via POST /api/auth/firebase.'
+    });
+});
 
-    if (!username || !pin) {
-        return res.status(400).json({ error: 'Username and PIN are required' });
+// --- STAFF LOGIN via Firebase Google ID token ---
+router.post('/auth/firebase', firebaseLoginLimiter, async (req, res) => {
+    const { idToken } = req.body || {};
+    if (!idToken || typeof idToken !== 'string') {
+        return res.status(400).json({ error: 'idToken is required' });
+    }
+    if (!isFirebaseConfigured()) {
+        return res.status(503).json({ error: 'Staff Google Sign-In is not configured on the server' });
     }
 
     try {
+        const decoded = await verifyIdToken(idToken);
+        const email = String(decoded.email || '').trim().toLowerCase();
+        if (!email || !decoded.email_verified) {
+            return res.status(403).json({ error: 'Google account email must be verified' });
+        }
+
         const result = await db.query(
-            'SELECT id, username, name, role FROM users WHERE username = $1 AND pin = $2',
-            [username.toLowerCase(), pin]
+            `SELECT id, username, name, role, email, firebase_uid, is_active
+             FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+            [email]
         );
 
         if (result.rows.length === 0) {
-            return res.status(401).json({ error: 'Invalid Username or PIN' });
+            return res.status(403).json({
+                error: 'This Google account is not authorized for Staff POS. Ask the owner to add your email.'
+            });
         }
 
         const user = result.rows[0];
+        if (user.is_active === false) {
+            return res.status(403).json({ error: 'This staff account is disabled' });
+        }
+
+        if (decoded.uid && user.firebase_uid !== decoded.uid) {
+            await db.query(`UPDATE users SET firebase_uid = $1 WHERE id = $2`, [decoded.uid, user.id]);
+        }
+
         const token = jwt.sign(
             { id: user.id, username: user.username, role: user.role, name: user.name },
             JWT_SECRET,
@@ -90,16 +148,20 @@ router.post('/auth/login', async (req, res) => {
                 id: user.id,
                 name: user.name,
                 role: user.role,
-                username: user.username
+                username: user.username,
+                email: user.email
             }
         });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Database error during login' });
+        if (err.status === 503) {
+            return res.status(503).json({ error: err.message });
+        }
+        console.error('Firebase auth failed:', err.message);
+        return res.status(401).json({ error: 'Invalid or expired Google sign-in. Please try again.' });
     }
 });
 
-// --- VERIFY MANAGER PIN (for UI pre-check) ---
+// --- VERIFY MANAGER OVERRIDE PIN (for UI pre-check) ---
 router.post('/auth/verify-manager', authenticateToken, async (req, res) => {
     try {
         const manager = await assertManagerPin(req.body.pin || req.body.managerPin);
@@ -880,6 +942,168 @@ router.get('/shifts/me', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Failed to load shifts' });
+    }
+});
+
+// --- STAFF ACCOUNTS (Owner / Manager only — no public self-registration) ---
+router.get('/staff', authenticateToken, async (req, res) => {
+    if (!requireOwner(req, res)) return;
+    try {
+        const result = await db.query(
+            `SELECT id, username, name, role, email, firebase_uid IS NOT NULL AS linked_google,
+                    is_active, (override_pin_hash IS NOT NULL) AS has_override_pin
+             FROM users
+             ORDER BY is_active DESC, name ASC`
+        );
+        res.json({ staff: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to list staff' });
+    }
+});
+
+router.post('/staff', authenticateToken, async (req, res) => {
+    if (!requireOwner(req, res)) return;
+    const email = normalizeStaffEmail(req.body && req.body.email);
+    const name = String((req.body && req.body.name) || '').trim();
+    let role = String((req.body && req.body.role) || 'Cashier').trim() || 'Cashier';
+    let username = String((req.body && req.body.username) || '').trim().toLowerCase();
+    const overridePin = req.body && req.body.overridePin != null
+        ? String(req.body.overridePin).trim()
+        : '';
+
+    if (!email || !email.includes('@')) {
+        return res.status(400).json({ error: 'A valid Google email is required' });
+    }
+    if (!name) {
+        return res.status(400).json({ error: 'Staff name is required' });
+    }
+    if (!username) username = slugUsername(email);
+
+    const roleLower = role.toLowerCase();
+    if (roleLower.includes('owner') || roleLower === 'manager') {
+        role = roleLower === 'manager' ? 'Manager' : role;
+    } else {
+        role = 'Cashier';
+    }
+
+    try {
+        const dup = await db.query(
+            `SELECT id FROM users WHERE LOWER(email) = $1 OR LOWER(username) = $2 LIMIT 1`,
+            [email, username]
+        );
+        if (dup.rows.length) {
+            return res.status(409).json({ error: 'A staff account with this email or username already exists' });
+        }
+
+        let overrideHash = null;
+        if (isManagerRole(role)) {
+            const pin = overridePin || String(process.env.MANAGER_OVERRIDE_PIN || '9999').trim();
+            if (!pin) {
+                return res.status(400).json({ error: 'Manager accounts need an override PIN' });
+            }
+            overrideHash = await bcrypt.hash(pin, 12);
+        } else if (overridePin) {
+            overrideHash = await bcrypt.hash(overridePin, 12);
+        }
+
+        const inserted = await db.query(
+            `INSERT INTO users (username, name, role, email, override_pin_hash, is_active)
+             VALUES ($1, $2, $3, $4, $5, true)
+             RETURNING id, username, name, role, email, is_active,
+                       (override_pin_hash IS NOT NULL) AS has_override_pin,
+                       false AS linked_google`,
+            [username, name, role, email, overrideHash]
+        );
+        res.status(201).json({ staff: inserted.rows[0] });
+    } catch (err) {
+        console.error(err);
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'Email or username already in use' });
+        }
+        res.status(500).json({ error: 'Failed to create staff account' });
+    }
+});
+
+router.patch('/staff/:id', authenticateToken, async (req, res) => {
+    if (!requireOwner(req, res)) return;
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: 'Invalid staff id' });
+    }
+
+    const updates = [];
+    const values = [];
+    let i = 1;
+
+    if (req.body && req.body.email != null) {
+        const email = normalizeStaffEmail(req.body.email);
+        if (!email || !email.includes('@')) {
+            return res.status(400).json({ error: 'A valid Google email is required' });
+        }
+        updates.push(`email = $${i++}`);
+        values.push(email);
+        updates.push('firebase_uid = NULL'); // force re-link on next Google login
+    }
+    if (req.body && req.body.name != null) {
+        const name = String(req.body.name).trim();
+        if (!name) return res.status(400).json({ error: 'Name cannot be empty' });
+        updates.push(`name = $${i++}`);
+        values.push(name);
+    }
+    if (req.body && req.body.role != null) {
+        let role = String(req.body.role).trim();
+        const rl = role.toLowerCase();
+        if (!(rl === 'manager' || rl.includes('owner') || rl === 'cashier')) {
+            return res.status(400).json({ error: 'Role must be Cashier, Manager, or Owner' });
+        }
+        if (rl === 'cashier') role = 'Cashier';
+        else if (rl === 'manager') role = 'Manager';
+        updates.push(`role = $${i++}`);
+        values.push(role);
+    }
+    if (req.body && typeof req.body.isActive === 'boolean') {
+        if (id === req.user.id && req.body.isActive === false) {
+            return res.status(400).json({ error: 'You cannot deactivate your own account' });
+        }
+        updates.push(`is_active = $${i++}`);
+        values.push(req.body.isActive);
+    }
+    if (req.body && req.body.overridePin != null) {
+        const pin = String(req.body.overridePin).trim();
+        if (!pin) {
+            updates.push('override_pin_hash = NULL');
+        } else {
+            const hash = await bcrypt.hash(pin, 12);
+            updates.push(`override_pin_hash = $${i++}`);
+            values.push(hash);
+        }
+    }
+
+    if (!updates.length) {
+        return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    values.push(id);
+    try {
+        const result = await db.query(
+            `UPDATE users SET ${updates.join(', ')}
+             WHERE id = $${i}
+             RETURNING id, username, name, role, email, is_active,
+                       firebase_uid IS NOT NULL AS linked_google,
+                       (override_pin_hash IS NOT NULL) AS has_override_pin`,
+            values
+        );
+        if (!result.rows.length) {
+            return res.status(404).json({ error: 'Staff account not found' });
+        }
+        res.json({ staff: result.rows[0] });
+    } catch (err) {
+        console.error(err);
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'Email already in use' });
+        }
+        res.status(500).json({ error: 'Failed to update staff account' });
     }
 });
 

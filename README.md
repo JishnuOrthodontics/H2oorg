@@ -18,14 +18,14 @@ Repo: [JishnuOrthodontics/H2oorg](https://github.com/JishnuOrthodontics/H2oorg)
 - **Frontend:** static HTML/CSS/JS (`frontend/`)
 - **Backend:** Node.js + Express (`backend/`)
 - **DB:** PostgreSQL via `pg` (Supabase; use the Session pooler URI for IPv4)
-- **Auth:** JWT (`JWT_SECRET`) + Manager PIN overrides for cashiers
+- **Auth:** Firebase Google Sign-In → app JWT (`JWT_SECRET`); hashed Manager override PIN for cashiers
 - **PII:** customer phone/email encrypted at rest (AES-256-GCM, `PII_ENCRYPTION_KEY`)
 - **Payments:** Razorpay Orders + Checkout.js + webhook (`payment.captured`)
 
 ## Features
 
 - **Public storefront:** scent finder, collections catalog (synced from API). Landing **Buy** still opens the staff POS simulation — not a customer web checkout.
-- **Staff POS:** login via Staff POS Portal (seeded manager: `jishnu` / `9999`). Checkout, barcode search, cash / Razorpay / split tender, loyalty redeem (100 pts = ₹100).
+- **Staff POS:** login via Staff POS Portal with **Google Sign-In** (email must be allowlisted in `users`). Checkout, barcode search, cash / Razorpay / split tender, loyalty redeem (100 pts = ₹100).
 - **Inventory:** batches per variant; restock; **Add Product** with compressed **catalog image upload** (optional; default bottle image otherwise).
 - **CRM:** scent profiles, birthday/anniversary, Twilio SMS outbox (or logged if keys unset).
 - **Reports:** daily sales/GST, top performers, dead stock, Tally XML export.
@@ -49,14 +49,16 @@ H2O_Implementation_Roadmap.md
 cd backend
 cp .env.example .env
 # Fill DATABASE_URL, JWT_SECRET, PII_ENCRYPTION_KEY, FRONTEND_ORIGIN
-# Optional: RAZORPAY_*, TWILIO_*, TALLY_*, ZOHO_*, CRON_SECRET
+# Fill FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
+# Optional: RAZORPAY_*, TWILIO_*, TALLY_*, ZOHO_*, CRON_SECRET, STAFF_EMAIL_*
 npm install
-npm run db:migrate-payments   # idempotent; also runs on server start
-# npm run db:seed             # only for empty DBs (drops tables)
+npm run db:migrate-payments        # idempotent; also runs on server start
+npm run db:migrate-firebase-auth   # staff email / override_pin_hash columns
+# npm run db:seed                  # only for empty DBs (drops tables)
 npm run dev
 ```
 
-API: `http://localhost:5000` · health: `GET /health` (shows `razorpay` / `twilio` / `zoho` / `tallyHttp` status)
+API: `http://localhost:5000` · health: `GET /health` (shows `razorpay` / `firebaseAuth` / `twilio` / `zoho` / `tallyHttp` status)
 
 ### 2. Frontend
 
@@ -67,7 +69,24 @@ node server.js
 
 Open `http://localhost:8080`. On localhost, `config.js` points at `http://localhost:5000/api`.
 
+Fill public Firebase web keys in [`frontend/firebase-config.js`](frontend/firebase-config.js) (from Firebase Console → Project settings → Your apps).
+
 **Checkout:** Cash Pay (full total) or **Pay (Card / UPI)** via Razorpay. Optional split: enter cash amount → remainder on Razorpay. Barcode: focus search, scan, Enter.
+
+## Staff Google Sign-In (Firebase)
+
+1. Create a Firebase project → **Authentication** → enable **Google**.
+2. Add a **Web** app; copy config into `frontend/firebase-config.js`.
+3. **Authentication → Settings → Authorized domains:** `localhost`, `h2oorg.com`, `www.h2oorg.com`.
+4. **Project settings → Service accounts → Generate new private key** → set on the API:
+   - `FIREBASE_PROJECT_ID`
+   - `FIREBASE_CLIENT_EMAIL`
+   - `FIREBASE_PRIVATE_KEY` (keep `\n` escapes in the env string)
+5. **Staff accounts are added only by the owner** (Owner Live → Staff accounts, or seed). There is no public self-registration; Google Sign-In only works for emails already in `users`.
+6. Manager override PIN (voids / price / inventory for cashiers): set when adding a Manager, or `MANAGER_OVERRIDE_PIN` on seed/migrate (default `9999`). Share out-of-band — never show on the public site.
+7. Flow: Google popup → Firebase ID token → `POST /api/auth/firebase` → app JWT in `localStorage` (`h2o_pos_token`).
+
+Unknown Google accounts receive **403**. PIN login (`POST /api/auth/login`) returns **410**. Owner APIs: `GET/POST /api/staff`, `PATCH /api/staff/:id` (Manager/Owner JWT only).
 
 ## Environment
 
@@ -79,6 +98,11 @@ See `.env.example` / `backend/.env.example`.
 | `JWT_SECRET` | ≥32 char secret for tokens |
 | `PII_ENCRYPTION_KEY` | ≥32 char secret for phone/email encryption |
 | `FRONTEND_ORIGIN` | Comma-separated allowed CORS origins |
+| `FIREBASE_PROJECT_ID` | Firebase project id (Admin SDK) |
+| `FIREBASE_CLIENT_EMAIL` | Service account client email |
+| `FIREBASE_PRIVATE_KEY` | Service account private key (`\n` escaped) |
+| `STAFF_EMAIL_JISHNU` / `STAFF_EMAIL_SIDDHARTH` | Optional seed/migrate Google emails |
+| `MANAGER_OVERRIDE_PIN` | Manager override PIN used when hashing on seed/migrate |
 | `RAZORPAY_KEY_ID` | Razorpay Key Id (`rzp_test_…` or live) |
 | `RAZORPAY_KEY_SECRET` | Razorpay Key Secret |
 | `RAZORPAY_WEBHOOK_SECRET` | Webhook signing secret |
@@ -100,10 +124,11 @@ Never commit `.env`. Production secrets live in the Render dashboard.
    Events: `payment.captured`, `payment.failed`.
 3. Client verify (`POST /api/payments/verify`) is the primary UX path; webhook reconciles if the browser closes mid-flow. Free-tier cold starts can delay webhooks — wake the service before a live sale if needed.
 
-### Staff security (Phase 2)
+### Staff security (Phase 2 + Firebase)
 
+- Staff open POS with **Google Sign-In**; only emails in `users` (`is_active`) receive a JWT. **Only the owner** can create/disable staff (Owner Live → Staff accounts).
 - Sales store `employee_id` from the JWT; Reports shows **Sales & commission by staff** (5% of paid subtotal).
-- Cashiers need a **Manager PIN** (seeded manager: `jishnu` / `9999`) to void sales, edit cart prices, restock, or add products. Managers skip the prompt.
+- Cashiers need a **Manager override PIN** (bcrypt `override_pin_hash`; seed default from `MANAGER_OVERRIDE_PIN`) to void sales, edit cart prices, restock, or add products. Managers skip the prompt.
 - POS topbar **Clock In / Clock Out** writes `shift_logs` (`GET /api/shifts/me`).
 
 ### CRM & reports (Phase 3)
@@ -144,6 +169,7 @@ Redeploy API: push to `main` (Render Blueprint sync) or **Manual Sync** on the B
 | `npm run db:migrate-phase2` | employee_id, void fields, `shift_logs`, `audit_overrides` |
 | `npm run db:migrate-phase3` | birthday/anniversary, `loyalty_redemptions`, `message_outbox` |
 | `npm run db:migrate-phase4` | `ledger_exports`, export timestamps, `perfumes.image` → TEXT |
+| `npm run db:migrate-firebase-auth` | `users.email`, `firebase_uid`, `override_pin_hash`, `is_active` |
 
 ## Roadmap
 

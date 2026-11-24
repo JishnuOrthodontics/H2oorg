@@ -369,29 +369,43 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (btnExitPos) {
-        btnExitPos.addEventListener("click", () => {
+        btnExitPos.addEventListener("click", async () => {
             posPortalView.style.display = "none";
             landingView.style.display = "block";
-            authenticatedUser = null; // Clear session on exit
-            localStorage.removeItem("h2o_pos_token"); // Clear JWT
+            authenticatedUser = null;
+            localStorage.removeItem("h2o_pos_token");
+            try {
+                if (typeof firebase !== "undefined" && firebase.auth) {
+                    await firebase.auth().signOut();
+                }
+            } catch (e) {
+                console.warn("Firebase signOut:", e);
+            }
             window.scrollTo(0, 0);
         });
     }
 
-    // --- Staff Authentication & Session State ---
-    const STAFF_ACCOUNTS = {
-        siddharth: { id: 1, name: "Siddharth M.", role: "Cashier", pin: "1234" },
-        meera: { id: 2, name: "Meera K.", role: "Sales Associate", pin: "5678" },
-        jishnu: { id: 3, name: "Dr. Jishnu Sen", role: "Store Manager & Owner", pin: "9999" }
-    };
+    // --- Staff Authentication (Google / Firebase → app JWT) ---
+    function setLoginError(message, show) {
+        const errorMsg = document.getElementById("login-error-message");
+        if (!errorMsg) return;
+        if (message) errorMsg.textContent = message;
+        errorMsg.style.display = show ? "block" : "none";
+    }
 
-    let currentEnteredPin = "";
+    function setGoogleSignInLoading(loading) {
+        const btn = document.getElementById("btn-google-signin");
+        const label = document.getElementById("google-signin-label");
+        if (btn) btn.disabled = !!loading;
+        if (label) label.textContent = loading ? "Signing in…" : "Sign in with Google";
+    }
 
     window.openLoginModal = function() {
         const modal = document.getElementById("pos-login-modal");
         if (modal) {
             modal.style.display = "flex";
-            clearPin();
+            setLoginError("", false);
+            setGoogleSignInLoading(false);
         }
     };
 
@@ -402,120 +416,88 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    window.pressPinKey = function(digit) {
-        if (currentEnteredPin.length < 4) {
-            currentEnteredPin += digit;
-            updatePinDots();
-            
-            // Auto-submit on 4th digit
-            if (currentEnteredPin.length === 4) {
-                setTimeout(authenticateStaff, 200);
-            }
+    function enterPosAfterAuth() {
+        const lockIcon = document.getElementById("login-lock-icon-fa");
+        if (lockIcon) {
+            lockIcon.className = "fas fa-lock-open";
+            lockIcon.style.color = "#10b981";
         }
-    };
 
-    window.clearPin = function() {
-        currentEnteredPin = "";
-        updatePinDots();
-        document.getElementById("login-error-message").style.display = "none";
-    };
-
-    window.backspacePin = function() {
-        if (currentEnteredPin.length > 0) {
-            currentEnteredPin = currentEnteredPin.slice(0, -1);
-            updatePinDots();
-        }
-    };
-
-    function updatePinDots() {
-        const dots = document.querySelectorAll("#pin-dots-container .pin-dot");
-        dots.forEach((dot, idx) => {
-            if (idx < currentEnteredPin.length) {
-                dot.classList.add("filled");
-            } else {
-                dot.classList.remove("filled");
-            }
-        });
-    }
-
-    async function authenticateStaff() {
-        const select = document.getElementById("login-staff-select");
-        const staffId = select.value;
-        let success = false;
-        
-        if (useBackend) {
-            try {
-                const res = await fetch(`${API_BASE_URL}/auth/login`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username: staffId, pin: currentEnteredPin })
-                });
-                
-                if (res.ok) {
-                    const data = await res.json();
-                    localStorage.setItem("h2o_pos_token", data.token);
-                    authenticatedUser = data.user;
-                    success = true;
-                    // Sync sales history and reports for this user
-                    await syncDataFromBackend();
-                }
-            } catch (e) {
-                console.error("Backend login failed, attempting local fallback...", e);
-            }
-        }
-        
-        // Offline Local Fallback
-        if (!success) {
-            const staff = STAFF_ACCOUNTS[staffId];
-            if (staff && currentEnteredPin === staff.pin) {
-                authenticatedUser = staff;
-                success = true;
-            }
-        }
-        
-        if (success) {
-            // Success: Unlock animation
-            const lockIcon = document.getElementById("login-lock-icon-fa");
+        setTimeout(() => {
+            closeLoginModal();
+            document.getElementById("landing-view").style.display = "none";
+            document.getElementById("pos-portal-view").style.display = "block";
+            updatePosUserSession();
+            initPosTerminal();
+            refreshShiftStatus();
             if (lockIcon) {
-                lockIcon.className = "fas fa-lock-open";
-                lockIcon.style.color = "#10b981";
+                lockIcon.className = "fas fa-lock";
+                lockIcon.style.color = "";
             }
-            
-            setTimeout(() => {
-                // Transition to POS
-                closeLoginModal();
-                document.getElementById("landing-view").style.display = "none";
-                document.getElementById("pos-portal-view").style.display = "block";
-                
-                // Set active user session in POS
-                updatePosUserSession();
-                initPosTerminal();
-                refreshShiftStatus();
-                
-                // Reset lock icon
-                if (lockIcon) {
-                    lockIcon.className = "fas fa-lock";
-                    lockIcon.style.color = "";
-                }
-            }, 500);
-        } else {
-            // Fail: Shake and error
-            const modalContent = document.querySelector(".login-modal-content");
-            if (modalContent) {
-                modalContent.classList.add("shake-animation");
-                setTimeout(() => modalContent.classList.remove("shake-animation"), 400);
-            }
-            
-            const errorMsg = document.getElementById("login-error-message");
-            if (errorMsg) {
-                errorMsg.style.display = "block";
-            }
-            
-            // Reset PIN
-            currentEnteredPin = "";
-            updatePinDots();
-        }
+        }, 400);
     }
+
+    function failLogin(message) {
+        const modalContent = document.querySelector(".login-modal-content");
+        if (modalContent) {
+            modalContent.classList.add("shake-animation");
+            setTimeout(() => modalContent.classList.remove("shake-animation"), 400);
+        }
+        setLoginError(message || "Sign-in failed. Please try again.", true);
+        setGoogleSignInLoading(false);
+    }
+
+    window.signInWithGoogle = async function() {
+        setLoginError("", false);
+
+        if (!window.H2O_FIREBASE_READY || typeof firebase === "undefined") {
+            failLogin("Google Sign-In is not configured yet. Add Firebase web config in firebase-config.js.");
+            return;
+        }
+        if (!useBackend) {
+            failLogin("Staff sign-in requires the API. Check your connection and try again.");
+            return;
+        }
+
+        setGoogleSignInLoading(true);
+        try {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            provider.setCustomParameters({ prompt: "select_account" });
+            const result = await firebase.auth().signInWithPopup(provider);
+            const idToken = await result.user.getIdToken();
+
+            const res = await fetch(`${API_BASE_URL}/auth/firebase`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ idToken })
+            });
+            const data = await res.json().catch(() => ({}));
+
+            if (!res.ok) {
+                try { await firebase.auth().signOut(); } catch (_) { /* ignore */ }
+                failLogin(data.error || "This Google account is not authorized for Staff POS.");
+                return;
+            }
+
+            localStorage.setItem("h2o_pos_token", data.token);
+            authenticatedUser = data.user;
+            await syncDataFromBackend();
+            setGoogleSignInLoading(false);
+            enterPosAfterAuth();
+        } catch (e) {
+            console.error("Google sign-in failed:", e);
+            const code = e && e.code;
+            if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+                setGoogleSignInLoading(false);
+                return;
+            }
+            failLogin(
+                !useBackend
+                    ? "Staff sign-in unavailable — API is offline."
+                    : (e.message || "Google sign-in failed. Please try again.")
+            );
+        }
+    };
 
     function updatePosUserSession() {
         const topbarUserContainer = document.getElementById("pos-topbar-user");
@@ -1804,11 +1786,124 @@ window.renderOwnerDashboard = async function() {
             (r) => rowHtml(`${r.perfume} <span style="color:var(--text-muted);font-size:0.75rem;">${r.size || ""}</span>`, `${r.qty} · ${r.batch_age_days || "?"}d`),
             "No dead stock flagged."
         );
+
+        await loadOwnerStaffList();
     } catch (e) {
         if (errEl) {
             errEl.style.display = "block";
             errEl.textContent = e.message || "Could not load owner dashboard.";
         }
+    }
+};
+
+function setOwnerStaffError(message) {
+    const el = document.getElementById("owner-staff-error");
+    if (!el) return;
+    if (message) {
+        el.style.display = "block";
+        el.textContent = message;
+    } else {
+        el.style.display = "none";
+        el.textContent = "";
+    }
+}
+
+window.loadOwnerStaffList = async function() {
+    const list = document.getElementById("owner-staff-list");
+    if (!list) return;
+    setOwnerStaffError("");
+    if (!useBackend || !localStorage.getItem("h2o_pos_token") || !isManagerUser(authenticatedUser)) {
+        list.innerHTML = `<p style="color:var(--text-muted); font-size:0.85rem; margin:0;">Owner login required to manage staff.</p>`;
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE_URL}/staff`, { headers: getAuthHeaders() });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Failed to load staff");
+        const rows = data.staff || [];
+        if (!rows.length) {
+            list.innerHTML = `<p style="color:var(--text-muted); font-size:0.85rem; margin:0;">No staff accounts yet. Add the first cashier above.</p>`;
+            return;
+        }
+        list.innerHTML = `
+            <table class="pos-table" style="width:100%; font-size:0.8rem;">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;">Name</th>
+                        <th style="text-align:left;">Google email</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map((s) => `
+                        <tr style="opacity:${s.is_active ? 1 : 0.55};">
+                            <td style="text-align:left;">${s.name}<br><span style="color:var(--text-muted); font-size:0.7rem;">@${s.username}${s.linked_google ? " · Google linked" : ""}</span></td>
+                            <td style="text-align:left;">${s.email || "<em style='color:var(--text-muted)'>not set</em>"}</td>
+                            <td>${s.role}</td>
+                            <td>${s.is_active ? "Active" : "Disabled"}</td>
+                            <td>
+                                <button type="button" class="btn btn-outline" style="font-size:0.7rem; padding:0.35rem 0.65rem;"
+                                    onclick="toggleStaffActive(${s.id}, ${s.is_active ? "false" : "true"})">
+                                    ${s.is_active ? "Disable" : "Enable"}
+                                </button>
+                            </td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        `;
+    } catch (e) {
+        list.innerHTML = "";
+        setOwnerStaffError(e.message || "Could not load staff list.");
+    }
+};
+
+window.submitAddStaff = async function(event) {
+    event.preventDefault();
+    setOwnerStaffError("");
+    if (!isManagerUser(authenticatedUser)) {
+        setOwnerStaffError("Only the owner can add staff accounts.");
+        return false;
+    }
+    const name = document.getElementById("staff-new-name")?.value.trim() || "";
+    const email = document.getElementById("staff-new-email")?.value.trim() || "";
+    const role = document.getElementById("staff-new-role")?.value || "Cashier";
+    const overridePin = document.getElementById("staff-new-override-pin")?.value.trim() || "";
+    try {
+        const res = await fetch(`${API_BASE_URL}/staff`, {
+            method: "POST",
+            headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ name, email, role, overridePin: overridePin || undefined })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Could not add staff");
+        document.getElementById("owner-add-staff-form")?.reset();
+        await loadOwnerStaffList();
+    } catch (e) {
+        setOwnerStaffError(e.message || "Could not add staff.");
+    }
+    return false;
+};
+
+window.toggleStaffActive = async function(id, isActive) {
+    setOwnerStaffError("");
+    if (!isManagerUser(authenticatedUser)) {
+        setOwnerStaffError("Only the owner can change staff accounts.");
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE_URL}/staff/${id}`, {
+            method: "PATCH",
+            headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ isActive: !!isActive })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Update failed");
+        await loadOwnerStaffList();
+    } catch (e) {
+        setOwnerStaffError(e.message || "Could not update staff.");
     }
 };
 

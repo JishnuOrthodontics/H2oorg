@@ -30,6 +30,15 @@ function validateEnv() {
     if (!rzReady) {
         console.warn('⚠️  RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not set — Card/UPI checkout will return 503 until configured.');
     }
+
+    const fbReady =
+        process.env.FIREBASE_PROJECT_ID &&
+        process.env.FIREBASE_CLIENT_EMAIL &&
+        process.env.FIREBASE_PRIVATE_KEY &&
+        String(process.env.FIREBASE_PRIVATE_KEY).includes('BEGIN PRIVATE KEY');
+    if (!fbReady) {
+        console.warn('⚠️  FIREBASE_PROJECT_ID / CLIENT_EMAIL / PRIVATE_KEY not set — Staff Google Sign-In will return 503 until configured.');
+    }
 }
 
 function getAllowedOrigins() {

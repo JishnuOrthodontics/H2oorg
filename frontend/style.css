@@ -1514,18 +1514,18 @@ footer {
     }
 }
 
-/* --- STAFF LOGIN MODAL & PIN PAD --- */
+/* --- STAFF LOGIN MODAL (Google Sign-In) --- */
 .login-modal-content {
     background: #0e0e10;
     border: 1px solid var(--border-color);
     border-radius: 12px;
     width: 100%;
     max-width: 380px;
-    padding: 1.75rem 2rem; /* More compact padding */
+    padding: 1.75rem 2rem;
     box-shadow: var(--shadow-gold-heavy);
     text-align: center;
     position: relative;
-    margin: auto; /* Perfect centering with scroll fallback */
+    margin: auto;
     animation: modalSlideUp 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
 }
 
@@ -1536,77 +1536,37 @@ footer {
     animation: pulseLock 2s infinite;
 }
 
-.pin-display-container {
-    display: flex;
+.google-signin-btn {
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
-    gap: 1rem;
-    margin: 1rem 0 1.5rem; /* Reduced margins */
-}
-
-.pin-dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid var(--border-color);
-    background: transparent;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.85rem 1.25rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: #fff;
+    color: #3c4043;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
     transition: var(--transition-smooth);
 }
 
-.pin-dot.filled {
-    background: var(--primary-gold);
+.google-signin-btn:hover:not(:disabled) {
+    background: #f8f9fa;
     border-color: var(--primary-gold);
-    box-shadow: 0 0 10px var(--primary-gold);
 }
 
-/* Keypad Grid */
-.pin-keypad {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem; /* Tighter gap */
-    max-width: 230px; /* Reduced width */
-    margin: 0 auto;
+.google-signin-btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
 }
 
-.keypad-btn {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    aspect-ratio: 1;
-    border-radius: 50%;
-    font-size: 1.2rem; /* Slightly smaller text */
-    font-weight: 500;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-    user-select: none;
-}
-
-.keypad-btn:hover {
-    border-color: var(--primary-gold);
-    background: rgba(197, 168, 128, 0.08);
-    color: var(--primary-gold);
-}
-
-.keypad-btn:active {
-    transform: scale(0.9);
-    background: rgba(197, 168, 128, 0.2);
-}
-
-.keypad-btn.action-btn {
-    font-size: 0.9rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-color: transparent;
-    border-radius: 8px;
-    aspect-ratio: auto;
-    height: 100%;
-}
-
-.keypad-btn.action-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-primary);
+.google-signin-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
 }
 
 /* Error State Shake */

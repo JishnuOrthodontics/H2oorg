@@ -11,12 +11,16 @@
     "db:migrate-payments": "node scripts/migrate-payments.js",
     "db:migrate-phase2": "node scripts/migrate-phase2.js",
     "db:migrate-phase3": "node scripts/migrate-phase3.js",
-    "db:migrate-phase4": "node scripts/migrate-phase4.js"
+    "db:migrate-phase4": "node scripts/migrate-phase4.js",
+    "db:migrate-firebase-auth": "node scripts/migrate-firebase-auth.js"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^7.5.1",
+    "firebase-admin": "^12.7.0",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.12.0",
     "razorpay": "^2.9.8"
