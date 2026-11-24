@@ -40,7 +40,15 @@ async function syncDataFromBackend() {
         if (prodRes.ok) {
             const data = await prodRes.json();
             PERFUMES.length = 0;
-            data.forEach(p => PERFUMES.push(p));
+            data.forEach((p) => {
+                if (!Array.isArray(p.notes)) {
+                    p.notes = p.notes ? String(p.notes).split(',').map((n) => n.trim()).filter(Boolean) : [];
+                }
+                if (!Array.isArray(p.variants)) p.variants = [];
+                if (!Array.isArray(p.batches)) p.batches = [];
+                PERFUMES.push(p);
+            });
+            PERFUMES.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
         }
 
         // 2. Sync Customers
@@ -699,6 +707,12 @@ function initCatalogFilters() {
     });
 }
 
+function isFullCatalogPage() {
+    const path = String(window.location.pathname || "").toLowerCase();
+    // Cloudflare may serve /catalog or /catalog.html
+    return path.includes("catalog");
+}
+
 function renderCatalog() {
     const catalogGrid = document.querySelector(".catalog-grid");
     if (!catalogGrid) return;
@@ -706,34 +720,38 @@ function renderCatalog() {
     catalogGrid.innerHTML = "";
 
     let filtered = activeCatalogFilter === "All" 
-        ? PERFUMES 
+        ? PERFUMES.slice()
         : PERFUMES.filter(p => p.family === activeCatalogFilter);
 
-    // Limit to 3 on the home page, show all on catalog.html
-    const isCatalogPage = window.location.pathname.includes("catalog.html");
-    if (!isCatalogPage) {
+    filtered.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+    // Home collections teaser: 3 cards. Full catalog page (/catalog): every product.
+    if (!isFullCatalogPage()) {
         filtered = filtered.slice(0, 3);
     }
 
     filtered.forEach(perfume => {
+        const variants = Array.isArray(perfume.variants) ? perfume.variants : [];
+        if (!variants.length) return;
         // Find default variant (usually 50ml or first available)
-        const defaultVar = perfume.variants[0];
+        const defaultVar = variants[0];
+        const notes = Array.isArray(perfume.notes) ? perfume.notes : [];
         
         const card = document.createElement("div");
         card.className = "product-card";
         card.dataset.perfumeId = perfume.id;
         card.innerHTML = `
             <div class="product-card-image">
-                <img src="${perfume.image}" alt="${perfume.name}" id="img-${perfume.id}" onerror="this.src='https://images.unsplash.com/photo-1541643600914-78b084683601?w=500'">
-                <span class="product-card-badge badge">${perfume.family}</span>
+                <img src="${perfume.image || 'assets/images/oud.png'}" alt="${perfume.name}" id="img-${perfume.id}" onerror="this.src='https://images.unsplash.com/photo-1541643600914-78b084683601?w=500'">
+                <span class="product-card-badge badge">${perfume.family || ''}</span>
             </div>
             <div class="product-card-content">
-                <span class="product-card-brand">${perfume.brand}</span>
+                <span class="product-card-brand">${perfume.brand || ''}</span>
                 <h3 class="product-card-title">${perfume.name}</h3>
-                <p class="product-card-notes"><strong>Notes:</strong> ${perfume.notes.join(", ")}</p>
+                <p class="product-card-notes"><strong>Notes:</strong> ${notes.join(", ") || "—"}</p>
                 
                 <div class="product-card-sizes">
-                    ${perfume.variants.map((v, i) => `
+                    ${variants.map((v, i) => `
                         <button class="size-option ${i === 0 ? 'active' : ''}" 
                                 onclick="changeCatalogVariant(this, '${perfume.id}', '${v.id}', ${v.price})">
                             ${v.size} - ${v.concentration}
@@ -784,8 +802,7 @@ window.simulateLandingCartAdd = function(perfumeId, variantId) {
     addToCartState(perfume, variant);
 
     if (goToPos) {
-        const isCatalogPage = window.location.pathname.includes("catalog.html");
-        if (isCatalogPage) {
+        if (isFullCatalogPage()) {
             window.location.href = "index.html?pos=true";
         } else {
             document.getElementById("landing-view").style.display = "none";
