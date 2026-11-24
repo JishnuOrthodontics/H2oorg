@@ -1,6 +1,8 @@
 # H2O Perfume Retail POS
 
-Point-of-sale for H2O perfume retail: storefront catalog, staff checkout, inventory, CRM, reporting, and ledger export.
+Point-of-sale for **HARIESH AND HELDIN ORGANIZATION (H2O)** — perfume retail storefront, staff checkout, inventory, CRM, reporting, and ledger export.
+
+**Boutique:** 6/518/K,L, Paliyam Road, Nearby Nayara Petrol Pump, Chendamangalam, Ernakulam, Kerala, 683512 · **Phone:** +91 79073 49501 · **Email:** h2organization2025@gmail.com
 
 | Layer | Host |
 | --- | --- |

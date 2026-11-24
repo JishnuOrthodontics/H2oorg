@@ -522,7 +522,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (topbarUserContainer && authenticatedUser) {
             topbarUserContainer.innerHTML = `
                 <div><strong>${authenticatedUser.name}</strong> (${authenticatedUser.role})</div>
-                <div style="font-size: 0.7rem; color: var(--text-muted);">Kochi Branch</div>
+                <div style="font-size: 0.7rem; color: var(--text-muted);">Chendamangalam · Ernakulam</div>
             `;
         }
 
@@ -1314,7 +1314,7 @@ window.processRazorpayPayment = async function() {
             key: createData.keyId,
             amount: createData.amount,
             currency: createData.currency || "INR",
-            name: "H2O Perfumes",
+            name: "HARIESH AND HELDIN ORGANIZATION (H2O)",
             description: invoiceNo + (cashAmount > 0 ? ` (Cash ₹${cashAmount} + Card/UPI ₹${digitalAmount})` : "") + (totals.redeemPoints ? ` · Redeem ${totals.redeemPoints} pts` : ""),
             order_id: createData.orderId,
             prefill: {
@@ -1447,7 +1447,7 @@ async function finishCheckoutUi({ customerSelect, phoneNum, customerName, invoic
         const sendSms = confirm(`Queue receipt SMS to ${customerName}?`);
         if (sendSms) {
             try {
-                const body = `Hi ${customerName}, thanks for shopping at H2O. Invoice ${invoiceNo} for ₹${total.toLocaleString("en-IN")} is ready.`;
+                const body = `Hi ${customerName}, thanks for shopping at H2O (HARIESH AND HELDIN ORGANIZATION). Invoice ${invoiceNo} for ₹${total.toLocaleString("en-IN")} is ready. Call +91 79073 49501.`;
                 const res = await fetch(`${API_BASE_URL}/crm/customers/${encodeURIComponent(customerSelect.value)}/offer-sms`, {
                     method: "POST",
                     headers: getAuthHeaders(),
