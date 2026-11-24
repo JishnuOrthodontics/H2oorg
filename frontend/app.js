@@ -227,7 +227,7 @@ const CUSTOMERS = [
 ];
 
 // --- Simulated Database / State ---
-let cart = [];
+let cart = []; // Staff POS cart only
 let authenticatedUser = null;
 let lastReportByEmployee = [];
 let openShift = null;
@@ -761,9 +761,6 @@ function renderCatalog() {
 
                 <div class="product-card-footer">
                     <div class="product-card-price" id="price-${perfume.id}">₹${defaultVar.price.toLocaleString('en-IN')}</div>
-                    <button class="add-to-cart-btn" onclick="simulateLandingCartAdd('${perfume.id}', '${defaultVar.id}')" title="Simulate Adding to POS Cart">
-                        <i class="fas fa-plus">+</i>
-                    </button>
                 </div>
             </div>
         `;
@@ -772,43 +769,13 @@ function renderCatalog() {
 }
 
 window.changeCatalogVariant = function(btn, perfumeId, variantId, price) {
-    // Update active button state
     const parent = btn.parentElement;
     parent.querySelectorAll(".size-option").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
 
-    // Update price label
     const priceLabel = document.getElementById(`price-${perfumeId}`);
     if (priceLabel) {
         priceLabel.textContent = `₹${price.toLocaleString('en-IN')}`;
-    }
-
-    // Update the Add to Cart button's onclick action to use the newly selected variant
-    const card = document.querySelector(`[data-perfume-id="${perfumeId}"]`);
-    const cartBtn = card.querySelector(".add-to-cart-btn");
-    if (cartBtn) {
-        cartBtn.setAttribute("onclick", `simulateLandingCartAdd('${perfumeId}', '${variantId}')`);
-    }
-};
-
-window.simulateLandingCartAdd = function(perfumeId, variantId) {
-    const perfume = PERFUMES.find(p => p.id === perfumeId);
-    const variant = perfume.variants.find(v => v.id === variantId);
-
-    // Alert user and offer to go to POS
-    const goToPos = confirm(`[POS Simulation] "${perfume.name} (${variant.size})" added to the POS cart!\n\nWould you like to open the Staff POS Terminal to view the checkout process?`);
-    
-    // Add to cart state
-    addToCartState(perfume, variant);
-
-    if (goToPos) {
-        if (isFullCatalogPage()) {
-            window.location.href = "index.html?pos=true";
-        } else {
-            document.getElementById("landing-view").style.display = "none";
-            document.getElementById("pos-portal-view").style.display = "block";
-            initPosTerminal();
-        }
     }
 };
 
