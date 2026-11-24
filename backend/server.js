@@ -11,7 +11,7 @@ const { migratePhase2 } = require('./scripts/migrate-phase2');
 const { migratePhase3 } = require('./scripts/migrate-phase3');
 const { migratePhase4 } = require('./scripts/migrate-phase4');
 const { isConfigured } = require('./config/razorpay');
-const { isTwilioConfigured } = require('./services/messaging');
+const { isTwilioConfigured, isMsg91Configured, smsProvider } = require('./services/messaging');
 const { isZohoConfigured } = require('./services/zohoBooks');
 
 validateEnv();
@@ -51,6 +51,8 @@ app.get('/health', async (req, res) => {
                 api: 'healthy',
                 database: 'connected',
                 razorpay: isConfigured() ? 'configured' : 'not_configured',
+                sms: smsProvider(),
+                msg91: isMsg91Configured() ? 'configured' : 'not_configured',
                 twilio: isTwilioConfigured() ? 'configured' : 'not_configured',
                 zoho: isZohoConfigured() ? 'configured' : 'not_configured',
                 tallyHttp: process.env.TALLY_HTTP_URL ? 'configured' : 'not_configured'
@@ -83,7 +85,7 @@ Promise.all([
         console.log(`🚀 Server running on port ${PORT}`);
         console.log(`🔒 CORS allowed origins: ${allowedOrigins.join(', ')}`);
         console.log(`💳 Razorpay: ${isConfigured() ? 'configured' : 'not configured (set RAZORPAY_* env)'}`);
-        console.log(`📱 Twilio SMS: ${isTwilioConfigured() ? 'configured' : 'not configured (messages logged to outbox)'}`);
+        console.log(`📱 SMS provider: ${smsProvider()}${isMsg91Configured() ? ' (MSG91)' : isTwilioConfigured() ? ' (Twilio)' : ' — messages logged to outbox'}`);
         console.log(`📒 Zoho Books: ${isZohoConfigured() ? 'configured' : 'not configured'}`);
         console.log(`📥 Tally HTTP: ${process.env.TALLY_HTTP_URL ? 'configured' : 'generate-only (set TALLY_HTTP_URL to push)'}`);
     });

@@ -1495,7 +1495,8 @@ function renderPosInventory() {
                 <td><small>${nearest.expDate || "N/A"}</small></td>
                 <td>₹${Number(variant.price).toLocaleString('en-IN')}</td>
                 <td>${stockStatus}</td>
-                <td>
+                <td style="white-space:nowrap;">
+                    <button class="btn btn-outline" style="padding:0.25rem 0.5rem; font-size:0.75rem; margin-right:0.35rem;" onclick="openEditInventoryModal('${perfume.id}', '${variant.id}')">Edit</button>
                     <button class="btn btn-outline" style="padding:0.25rem 0.5rem; font-size:0.75rem" onclick="openRestockModal('${perfume.id}', '${variant.id}')">Add Stock</button>
                 </td>
             `;
@@ -2523,6 +2524,174 @@ window.saveNewInventory = async function() {
     if (typeof renderCatalog === "function") renderCatalog();
 };
 
+let activeEditPerfumeId = null;
+let activeEditVariantId = null;
+let editInventoryImageDataUrl = null;
+
+function setEditInventoryImagePreview(src) {
+    const img = document.getElementById("inv-edit-image-preview");
+    const placeholder = document.getElementById("inv-edit-image-placeholder");
+    const clearBtn = document.getElementById("inv-edit-image-clear");
+    if (img) {
+        if (src) {
+            img.src = src;
+            img.style.display = "block";
+        } else {
+            img.removeAttribute("src");
+            img.style.display = "none";
+        }
+    }
+    if (placeholder) {
+        placeholder.style.display = src ? "none" : "block";
+        placeholder.textContent = "No change";
+    }
+    if (clearBtn) clearBtn.style.display = src ? "inline-flex" : "none";
+}
+
+window.clearEditInventoryImage = function() {
+    editInventoryImageDataUrl = null;
+    const fileInput = document.getElementById("inv-edit-image-file");
+    if (fileInput) fileInput.value = "";
+    setEditInventoryImagePreview(null);
+};
+
+window.onEditInventoryImageFileChange = async function(event) {
+    const file = event.target && event.target.files && event.target.files[0];
+    if (!file) {
+        clearEditInventoryImage();
+        return;
+    }
+    try {
+        editInventoryImageDataUrl = await compressImageFile(file);
+        setEditInventoryImagePreview(editInventoryImageDataUrl);
+    } catch (err) {
+        clearEditInventoryImage();
+        alert(err.message || "Could not use that image.");
+    }
+};
+
+window.openEditInventoryModal = function(perfumeId, variantId) {
+    const perfume = PERFUMES.find(p => p.id === perfumeId);
+    const variant = perfume && perfume.variants.find(v => v.id === variantId);
+    if (!perfume || !variant) return;
+
+    activeEditPerfumeId = perfumeId;
+    activeEditVariantId = variantId;
+    clearEditInventoryImage();
+
+    document.getElementById("inv-edit-name").value = perfume.name || "";
+    document.getElementById("inv-edit-brand").value = perfume.brand || "";
+    document.getElementById("inv-edit-family").value = perfume.family || "Woody";
+    document.getElementById("inv-edit-size").value = variant.size || "";
+    document.getElementById("inv-edit-conc").value = variant.concentration || "EDP";
+    document.getElementById("inv-edit-price").value = variant.price != null ? variant.price : "";
+    document.getElementById("inv-edit-notes").value = Array.isArray(perfume.notes)
+        ? perfume.notes.join(", ")
+        : (perfume.notes || "");
+
+    if (perfume.image) {
+        setEditInventoryImagePreview(perfume.image);
+        // Keep current image unless user uploads a replacement
+        editInventoryImageDataUrl = null;
+        const placeholder = document.getElementById("inv-edit-image-placeholder");
+        if (placeholder) placeholder.style.display = "none";
+        const clearBtn = document.getElementById("inv-edit-image-clear");
+        if (clearBtn) clearBtn.style.display = "none";
+    }
+
+    const modal = document.getElementById("edit-inventory-modal");
+    if (modal) modal.style.display = "flex";
+};
+
+window.closeEditInventoryModal = function() {
+    const modal = document.getElementById("edit-inventory-modal");
+    if (modal) modal.style.display = "none";
+    activeEditPerfumeId = null;
+    activeEditVariantId = null;
+    clearEditInventoryImage();
+};
+
+window.saveEditInventory = async function() {
+    const name = document.getElementById("inv-edit-name").value.trim();
+    const brand = document.getElementById("inv-edit-brand").value.trim();
+    const family = document.getElementById("inv-edit-family").value;
+    const size = document.getElementById("inv-edit-size").value.trim();
+    const concentration = document.getElementById("inv-edit-conc").value;
+    const price = parseFloat(document.getElementById("inv-edit-price").value);
+    const notesStr = document.getElementById("inv-edit-notes").value.trim();
+
+    if (!activeEditPerfumeId || !activeEditVariantId) return;
+    if (!name || !brand || !size || isNaN(price) || price <= 0) {
+        alert("Please fill name, brand, size, and a valid price.");
+        return;
+    }
+
+    const approval = await promptManagerPin("Manager PIN required to edit inventory");
+    if (!approval) return;
+
+    const payload = {
+        name,
+        brand,
+        family,
+        size,
+        concentration,
+        price,
+        notes: notesStr
+    };
+    if (editInventoryImageDataUrl) payload.image = editInventoryImageDataUrl;
+
+    let savedOnCloud = false;
+    if (useBackend && localStorage.getItem("h2o_pos_token")) {
+        try {
+            if (!approval.skipped) payload.managerPin = approval.managerPin;
+            const res = await fetch(
+                `${API_BASE_URL}/products/${encodeURIComponent(activeEditPerfumeId)}/variants/${encodeURIComponent(activeEditVariantId)}`,
+                {
+                    method: "PUT",
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(payload)
+                }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                savedOnCloud = true;
+                alert("Product updated.");
+            } else {
+                alert(data.error || "Update failed");
+                return;
+            }
+        } catch (e) {
+            console.error("Backend product edit failed, falling back to local...", e);
+        }
+    }
+
+    if (!savedOnCloud) {
+        const perfume = PERFUMES.find(p => p.id === activeEditPerfumeId);
+        const variant = perfume && perfume.variants.find(v => v.id === activeEditVariantId);
+        if (!perfume || !variant) {
+            alert("Product not found locally.");
+            return;
+        }
+        perfume.name = name;
+        perfume.brand = brand;
+        perfume.family = family;
+        perfume.notes = notesStr ? notesStr.split(",").map(n => n.trim()).filter(Boolean) : perfume.notes;
+        if (editInventoryImageDataUrl) perfume.image = editInventoryImageDataUrl;
+        variant.size = size;
+        variant.concentration = concentration;
+        variant.price = price;
+        alert("[Offline] Product updated locally.");
+    }
+
+    closeEditInventoryModal();
+    if (useBackend) {
+        await syncDataFromBackend();
+    }
+    renderPosInventory();
+    renderPosProducts();
+    if (typeof renderCatalog === "function") renderCatalog();
+};
+
 window.openRestockModal = function(perfumeId, variantId) {
     const perfume = PERFUMES.find(p => p.id === perfumeId);
     const variant = perfume.variants.find(v => v.id === variantId);
@@ -2535,13 +2704,18 @@ window.openRestockModal = function(perfumeId, variantId) {
     const subtitle = document.getElementById("restock-modal-subtitle");
     
     if (modal && subtitle) {
-        subtitle.innerHTML = `Add stock for <strong>${perfume.name} (${variant.size} - ${variant.concentration})</strong>.<br>Current stock: ${perfume.batches[0]?.qty || 0} units.`;
-        
-        // Populate default values from active batch if exists
-        const activeBatch = perfume.batches[0] || { batchNo: "", expDate: "" };
+        const batches = Array.isArray(perfume.batches) ? perfume.batches : [];
+        const variantBatches = batches.filter(
+            (b) => b.variantId === variant.id || b.variant_id === variant.id
+        );
+        const qty = variantBatches.reduce((sum, b) => sum + (Number(b.qty) || 0), 0);
+        const activeBatch = variantBatches[0] || batches[0] || { batchNo: "", expDate: "" };
+
+        subtitle.innerHTML = `Add stock for <strong>${perfume.name} (${variant.size} - ${variant.concentration})</strong>.<br>Current stock: ${qty} units.`;
+
         document.getElementById("restock-qty").value = "";
-        document.getElementById("restock-batch").value = activeBatch.batchNo;
-        document.getElementById("restock-expiry").value = activeBatch.expDate;
+        document.getElementById("restock-batch").value = activeBatch.batchNo || "";
+        document.getElementById("restock-expiry").value = activeBatch.expDate || "";
         
         modal.style.display = "flex";
     }

@@ -80,7 +80,9 @@ See `.env.example` / `backend/.env.example`.
 | `RAZORPAY_KEY_ID` | Razorpay Key Id (`rzp_test_…` or live) |
 | `RAZORPAY_KEY_SECRET` | Razorpay Key Secret |
 | `RAZORPAY_WEBHOOK_SECRET` | Webhook signing secret |
-| `TWILIO_ACCOUNT_SID` / `AUTH_TOKEN` / `FROM` | Optional SMS (else outbox `logged`) |
+| `MSG91_AUTH_KEY` / `MSG91_SENDER_ID` | Preferred India SMS (Authkey + 6-char sender) |
+| `MSG91_TEMPLATE_ID` / `MSG91_BODY_VAR` | DLT Flow template id; body variable (default `VAR1`) |
+| `TWILIO_ACCOUNT_SID` / `AUTH_TOKEN` / `FROM` | Optional SMS fallback if MSG91 unset |
 | `CRON_SECRET` | Auth for birthday-offers + Tally/Zoho cron (`X-Cron-Secret`) |
 | `TALLY_HTTP_URL` / `TALLY_HTTP_TOKEN` | Optional Tally HTTP import push |
 | `ZOHO_CLIENT_ID` / `SECRET` / `REFRESH_TOKEN` / `ORG_ID` | Optional Zoho Books sync |
@@ -107,7 +109,7 @@ Never commit `.env`. Production secrets live in the Render dashboard.
 - Reports: **Top performers** (brand/family/note) and **Dead stock** (N days).
 - CRM: birthday/anniversary; **Upcoming occasions**; Queue SMS / run birthday offers.
 - Loyalty: Silver (&lt;500) / Gold (500–1499) / Platinum (≥1500); redeem **100 pts = ₹100** at checkout.
-- Twilio: set `TWILIO_*` on Render. Cron: `POST /api/crm/birthday-offers/run` with header `X-Cron-Secret: $CRON_SECRET` (or Manager JWT).
+- SMS: prefer **MSG91** (`MSG91_AUTH_KEY` + `MSG91_SENDER_ID`). For India DLT, add `MSG91_TEMPLATE_ID` (Flow) so the offer text maps to `VAR1` (or `MSG91_BODY_VAR`). Twilio remains a fallback. Cron: `POST /api/crm/birthday-offers/run` with `X-Cron-Secret` (or Manager JWT).
 
 ### Ledger & Owner Live (Phase 4)
 

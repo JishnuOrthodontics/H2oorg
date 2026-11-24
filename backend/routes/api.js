@@ -6,7 +6,7 @@ const { encrypt, decrypt } = require('../config/crypto');
 const { finalizeSale } = require('../services/sales');
 const { voidSale } = require('../services/voidSale');
 const { loyaltyTier } = require('../services/loyalty');
-const { enqueueSms, processOutbox, isTwilioConfigured } = require('../services/messaging');
+const { enqueueSms, processOutbox, isTwilioConfigured, isMsg91Configured, smsProvider } = require('../services/messaging');
 const {
     authenticateToken,
     isManagerRole,
@@ -287,6 +287,78 @@ router.post('/products/:variantId/price', authenticateToken, async (req, res) =>
     } catch (err) {
         console.error(err);
         res.status(err.status || 500).json({ error: err.message || 'Failed to update price' });
+    }
+});
+
+// --- EDIT PRODUCT + VARIANT (catalog fields; manager PIN if cashier) ---
+router.put('/products/:perfumeId/variants/:variantId', authenticateToken, async (req, res) => {
+    const { perfumeId, variantId } = req.params;
+    const { name, brand, family, notes, image, size, concentration, price } = req.body || {};
+
+    if (!name || !brand || !size || price == null || Number(price) <= 0) {
+        return res.status(400).json({ error: 'Name, brand, size, and a valid price are required' });
+    }
+
+    try {
+        const manager = await requireManagerOverride(req);
+
+        const variantCheck = await db.query(
+            'SELECT id FROM variants WHERE id = $1 AND perfume_id = $2',
+            [variantId, perfumeId]
+        );
+        if (!variantCheck.rows.length) {
+            return res.status(404).json({ error: 'Product variant not found' });
+        }
+
+        const notesArr = Array.isArray(notes)
+            ? notes
+            : (typeof notes === 'string' && notes.trim()
+                ? notes.split(',').map((n) => n.trim()).filter(Boolean)
+                : null);
+
+        await db.query('BEGIN');
+
+        await db.query(
+            `UPDATE perfumes SET
+                name = $1,
+                brand = $2,
+                family = coalesce($3, family),
+                notes = coalesce($4, notes),
+                image = coalesce($5, image)
+             WHERE id = $6`,
+            [
+                name.trim(),
+                brand.trim(),
+                family || null,
+                notesArr,
+                (typeof image === 'string' && image.trim()) ? image.trim() : null,
+                perfumeId
+            ]
+        );
+
+        await db.query(
+            `UPDATE variants SET
+                size = $1,
+                concentration = coalesce($2, concentration),
+                price = $3
+             WHERE id = $4`,
+            [size.trim(), concentration || null, Number(price), variantId]
+        );
+
+        await db.query('COMMIT');
+
+        await logAuditOverride({
+            action: 'product_edit',
+            actorUserId: req.user.id,
+            managerUserId: manager.id,
+            detail: { perfumeId, variantId, name, brand, size, price: Number(price) }
+        });
+
+        res.json({ message: 'Product updated', perfumeId, variantId });
+    } catch (err) {
+        await db.query('ROLLBACK');
+        console.error(err);
+        res.status(err.status || 500).json({ error: err.message || 'Failed to update product' });
     }
 });
 
@@ -697,6 +769,8 @@ router.post('/crm/birthday-offers/run', async (req, res) => {
         await processOutbox(50);
         res.json({
             days,
+            smsProvider: smsProvider(),
+            msg91Configured: isMsg91Configured(),
             twilioConfigured: isTwilioConfigured(),
             queued
         });
